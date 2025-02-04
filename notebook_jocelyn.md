@@ -5,10 +5,40 @@ Client actions:
     - taken: Login
     - not taken: get password & encrypt
 - Login: prompt for username and password (encrypted)
-- List accounts (top $n$)
+- List accounts (top $n$): parameter is search substring %xyz% (possibly null), offset
     - Filter accounts
-- Send message
-- Read message
+- Send message:
+    - client sends senderid, recipientid, content
+    - server hit database to find recipientid,
+    - try to deliver to the socket
+    - log to database (including isdelivered)
+- Receive message:
+    - if client receives message from server, push notif (delivered) on top
+- Read message: recipientid, senderid
+    - server hits messages database/table to check for any unseen messages from senderid to recipientid
+    - client displays messages
 - Delete message(s)
 - Delete account
 
+Database:
+Table 1: users (userid, username, hashed password, associated socket)
+Table 2: messages (msgid, senderid, recipient id, message, status [pending, delivered, seen], timestamp)
+    what does it mean to choose how many messages to be delivered at once?
+
+## MESSAGE
+Protoheader (fixed length):
+- version number
+- json header length
+
+Header:
+- content length
+- action
+- (note: encoding is always UTF-8)
+
+## Log
+2/3/25: Took boilerplate multi-client code from https://realpython.com/python-sockets/#multi-connection-client-and-server
+- Thoughts: application level wire protocol should  include a header in UTF-8
+    - version num | length | operation
+    - server and client have different parsers for operations?
+
+- added tkinter to client using chatgpt
