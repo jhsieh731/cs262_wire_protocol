@@ -12,3 +12,10 @@ Client actions:
 - Delete message(s)
 - Delete account
 
+## Log
+2/3/25: Took boilerplate multi-client code from https://realpython.com/python-sockets/#multi-connection-client-and-server
+- Thoughts: application level wire protocol should  include a header in UTF-8
+    - version num | length | operation
+    - server and client have different parsers for operations?
+
+- added tkinter to client using chatgpt
