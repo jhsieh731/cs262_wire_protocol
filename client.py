@@ -5,11 +5,13 @@ import types
 import threading
 import tkinter as tk
 from tkinter import scrolledtext
+from database import MessageDatabase
 
 # Networking Setup
 sel = selectors.DefaultSelector()
 messages = [b"Message 1 from client.", b"Message 2 from client."]
 host, port, num_conns = sys.argv[1], int(sys.argv[2]), int(sys.argv[3])
+db = MessageDatabase()
 
 # GUI Setup
 class ClientGUI:
@@ -78,6 +80,7 @@ def network_thread():
 def send_to_server(message):
     for key in sel.get_map().values():
         key.data.outb += message
+        db.store_message("server1", "server2", message)
 
 # Main GUI Application
 root = tk.Tk()
