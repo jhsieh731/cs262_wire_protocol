@@ -5,11 +5,12 @@ import types
 import threading
 import tkinter as tk
 from tkinter import scrolledtext
+import msg_client
 
 # Networking Setup
 sel = selectors.DefaultSelector()
 messages = [b"Message 1 from client.", b"Message 2 from client."]
-host, port, num_conns = sys.argv[1], int(sys.argv[2]), int(sys.argv[3])
+host, port = sys.argv[1], int(sys.argv[2])
 
 # GUI Setup
 class ClientGUI:
@@ -37,47 +38,88 @@ class ClientGUI:
         msg = self.entry.get()
         if msg:
             self.entry.delete(0, tk.END)
-            send_to_server(msg.encode())
+            send_to_server(msg)
 
 # Networking Functions
-def start_connections(host, port, num_conns):
-    server_addr = (host, port)
-    for i in range(num_conns):
-        connid = i + 1
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.setblocking(False)
-        sock.connect_ex(server_addr)
-        events = selectors.EVENT_READ | selectors.EVENT_WRITE
-        data = types.SimpleNamespace(connid=connid, outb=b"")
-        sel.register(sock, events, data=data)
+def start_connection(host, port):
+    addr = (host, port)
+    print(f"Starting connection to {addr}")
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.setblocking(False)
+    sock.connect_ex(addr)
+    events = selectors.EVENT_READ | selectors.EVENT_WRITE
+    content = dict()
+    # json header
+    init_request = {
+        "action": "start_connection",
+        "content": content,
+    }
+    message = msg_client.Message(sel, sock, addr, init_request)
+    sel.register(sock, events, data=message)
 
-def service_connection(key, mask):
-    sock = key.fileobj
-    data = key.data
-    if mask & selectors.EVENT_READ:
-        recv_data = sock.recv(1024)
-        if recv_data:
-            gui.display_message(f"Received from server: {recv_data.decode()}")
-        else:
-            sel.unregister(sock)
-            sock.close()
-    if mask & selectors.EVENT_WRITE:
-        if data.outb:
-            sock.send(data.outb)
-            data.outb = b""
+
+# def service_connection(key, mask):
+#     sock = key.fileobj
+#     data = key.data
+#     if mask & selectors.EVENT_READ:
+#         recv_data = sock.recv(1024)
+#         if recv_data:
+#             data.outb += recv_data
+#         else:
+#             print(f"Closing connection to {data.addr}")
+#             sel.unregister(sock)
+#             sock.close()
+#     if mask & selectors.EVENT_WRITE:
+#         if data.outb:
+#             # return_data = trans_to_pig_latin(data.outb.decode("utf-8")) do things here
+#             return_data = return_data.encode("utf-8")
+#             sent = sock.send(return_data)
+#             data.outb = data.outb[sent:]
 
 # Thread for handling server communication
 def network_thread():
-    start_connections(host, port, num_conns)
-    while True:
-        events = sel.select(timeout=1)
-        for key, mask in events:
-            service_connection(key, mask)
+    start_connection(host, port)
+    try:
+        while True:
+            events = sel.select(timeout=1)
+            for key, mask in events:
+                message = key.data
+                try:
+                    message.process_events(mask)
+                except Exception:
+                    print(
+                        f"Main: Error: Exception for {message.addr}"
+                    )
+                    message.close()
+            # Check for a socket being monitored to continue.
+            if not sel.get_map():
+                break
+    except KeyboardInterrupt:
+        print("Caught keyboard interrupt, exiting")
+    finally:
+        print("selectors closed")
+        sel.close()
 
 # Send message to the server
 def send_to_server(message):
-    for key in sel.get_map().values():
-        key.data.outb += message
+    # for key in sel.get_map().values():
+    #     key.data.outb += message
+    for key in list(sel.get_map().values()):
+        msg_obj = key.data  # This is the Message instance
+        
+        # Prepare the new request
+        request = {
+            "action": "send",
+            "content": {"message": message},
+        }
+        
+        # Set the request and queue it
+        msg_obj.request = request
+        msg_obj._request_queued = False  # Ensure we can queue the new message
+        msg_obj.queue_request()          # Queue the message for sending
+        
+        # Set selector to listen for write events
+        msg_obj._set_selector_events_mask("w")
 
 # Main GUI Application
 root = tk.Tk()
