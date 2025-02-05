@@ -6,11 +6,13 @@ import threading
 import tkinter as tk
 from tkinter import scrolledtext
 import msg_client
+from database import MessageDatabase
 
 # Networking Setup
 sel = selectors.DefaultSelector()
 messages = [b"Message 1 from client.", b"Message 2 from client."]
 host, port = sys.argv[1], int(sys.argv[2])
+db = MessageDatabase()
 
 # GUI Setup
 class ClientGUI:
@@ -120,6 +122,7 @@ def send_to_server(message):
         
         # Set selector to listen for write events
         msg_obj._set_selector_events_mask("w")
+        db.store_message("server1", "server2", msg_obj.response)
 
 # Main GUI Application
 root = tk.Tk()

@@ -1,0 +1,18 @@
+# Database files
+*.db
+
+# Python compiled files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Python virtual environment
+venv/
+env/
+.env/
+
+# IDE specific files
+.vscode/
+.idea/
+*.swp
+.DS_Store
