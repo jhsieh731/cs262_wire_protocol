@@ -59,9 +59,13 @@ class Message:
                 pass
             else:
                 self._send_buffer = self._send_buffer[sent:]
-                # Close when the buffer is drained. The response has been sent.
+                # After sending, reset state and switch back to read mode
                 if sent and not self._send_buffer:
-                    self.close()
+                    self._jsonheader_len = None
+                    self.jsonheader = None
+                    self.request = None
+                    self.response_created = False
+                    self._set_selector_events_mask("r")
 
     def _json_encode(self, obj, encoding):
         return json.dumps(obj, ensure_ascii=False).encode(encoding)
@@ -77,46 +81,30 @@ class Message:
     # TODO: implement custom encode/decodes according to our protocol
 
     def _create_message(
-        self, *, content_bytes, content_type, content_encoding
+        self, *, content_bytes, action, content_length
     ):
-        # JSON version
         jsonheader = {
-            "byteorder": sys.byteorder,
-            "content-type": content_type,
-            "content-encoding": content_encoding,
-            "content-length": len(content_bytes),
+            "content-length": content_length,
+            "action": action,
         }
         jsonheader_bytes = self._json_encode(jsonheader, "utf-8")
         message_hdr = struct.pack(">H", len(jsonheader_bytes))
-        # TODO: custom header
         message = message_hdr + jsonheader_bytes + content_bytes
         return message
 
     def _create_response_json_content(self):
-        action = self.request.get("action")
-        # TODO: implement custom actions according to protocol
-        if action == "search":
-            query = self.request.get("value")
-            answer = request_search.get(query) or f"No match for '{query}'."
-            content = {"result": answer}
-        else:
-            content = {"result": f"Error: invalid action '{action}'."}
-        content_encoding = "utf-8"
-        response = {
-            "content_bytes": self._json_encode(content, content_encoding),
-            "content_type": "text/json",
-            "content_encoding": content_encoding,
+        # First decode the request content
+        request_content = self._json_decode(self.request, "utf-8")
+        # Create response content and encode it
+        response_content = {
+            "content": request_content,
+            "action": "response"
         }
-        return response
-
-
-    # TODO: idt we need to consider binary content
-    def _create_response_binary_content(self):
+        content_bytes = self._json_encode(response_content, "utf-8")
         response = {
-            "content_bytes": b"First 10 bytes of request: "
-            + self.request[:10],
-            "content_type": "binary/custom-server-binary-type",
-            "content_encoding": "binary",
+            "content_bytes": content_bytes,
+            "action": "response",
+            "content_length": len(content_bytes)
         }
         return response
 
@@ -183,10 +171,8 @@ class Message:
             )
             self._recv_buffer = self._recv_buffer[hdrlen:]
             for reqhdr in (
-                "byteorder",
                 "content-length",
-                "content-type",
-                "content-encoding",
+                "action",
             ):
                 if reqhdr not in self.jsonheader:
                     raise ValueError(f"Missing required header '{reqhdr}'.")
@@ -197,26 +183,14 @@ class Message:
             return
         data = self._recv_buffer[:content_len]
         self._recv_buffer = self._recv_buffer[content_len:]
-        if self.jsonheader["content-type"] == "text/json":
-            encoding = self.jsonheader["content-encoding"]
-            self.request = self._json_decode(data, encoding)
-            print(f"Received request {self.request!r} from {self.addr}")
-        else:
-            # Binary or unknown content-type
-            self.request = data
-            print(
-                f"Received {self.jsonheader['content-type']} "
-                f"request from {self.addr}"
-            )
-        # Set selector to listen for write events, we're done reading.
+        # The data is already JSON encoded, store it as is
+        self.request = data
+        print(f"Stored request data: {self.request!r}")
+        # Set selector to listen for write events, we're ready to respond
         self._set_selector_events_mask("w")
 
     def create_response(self):
-        if self.jsonheader["content-type"] == "text/json":
-            response = self._create_response_json_content()
-        else:
-            # Binary or unknown content-type
-            response = self._create_response_binary_content()
+        response = self._create_response_json_content()
         message = self._create_message(**response)
         self.response_created = True
         self._send_buffer += message

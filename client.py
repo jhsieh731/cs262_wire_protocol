@@ -122,7 +122,7 @@ def send_to_server(message):
         
         # Set selector to listen for write events
         msg_obj._set_selector_events_mask("w")
-        db.store_message("server1", "server2", msg_obj.response)
+        db.store_message("server1", "server2", message)
 
 # Main GUI Application
 root = tk.Tk()
