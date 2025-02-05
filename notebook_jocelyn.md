@@ -21,9 +21,9 @@ Client actions:
 - Delete account
 
 Database:
-Table 1: users (userid, username, hashed password, associated socket)
-Table 2: messages (msgid, senderid, recipient id, message, status [pending, delivered, seen], timestamp)
-    what does it mean to choose how many messages to be delivered at once?
+- Table 1: users (userid, username, hashed password, associated socket)
+- Table 2: messages (msgid, senderid, recipient id, message, status [pending, delivered, seen], timestamp)
+    - what does it mean to choose how many messages to be delivered at once?
 
 ## MESSAGE
 Protoheader (fixed length):
@@ -42,3 +42,5 @@ Header:
     - server and client have different parsers for operations?
 
 - added tkinter to client using chatgpt
+
+2/4/25: Rewrote client Message class to use the wire protocol outlined above (JSON format), still need to keep the socket open so that Messages can be edited & sent over the same socket as long as the user is logged in. Maybe we should not call it a Message, since it persists?
