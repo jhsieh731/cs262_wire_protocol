@@ -4,6 +4,14 @@ import selectors
 import struct
 import sys
 
+# Example contacts list
+contacts_list = [
+    "Alice Smith",
+    "Bob Johnson",
+    "Charlie Brown",
+    "Diana Prince"
+]
+
 request_search = {
     "morpheus": "Follow the white rabbit. \U0001f430",
     "ring": "In the caves beneath the Misty Mountains. \U0001f48d",
@@ -93,13 +101,27 @@ class Message:
         return message
 
     def _create_response_json_content(self):
+        action = self.jsonheader.get("action")
+        
         # First decode the request content
         request_content = self._json_decode(self.request, "utf-8")
-        # Create response content and encode it
-        response_content = {
-            "content": request_content,
-            "action": "response"
-        }
+        
+        # Create response content based on action
+        if action == "list_contacts":
+            response_content = {
+                "content": {
+                    "result": "Success",
+                    "contacts": contacts_list
+                },
+                "action": "response"
+            }
+        else:
+            # Default behavior for other actions
+            response_content = {
+                "content": request_content,
+                "action": "response"
+            }
+            
         content_bytes = self._json_encode(response_content, "utf-8")
         response = {
             "content_bytes": content_bytes,
