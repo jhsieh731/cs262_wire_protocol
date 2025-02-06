@@ -33,13 +33,13 @@ class MessageDatabase:
         create_messages_sql = """
         CREATE TABLE messages (
             msgid INTEGER PRIMARY KEY AUTOINCREMENT,
-            senderid INTEGER NOT NULL,
-            recipientid INTEGER NOT NULL,
+            senderuuid INTEGER NOT NULL,
+            recipientuuid INTEGER NOT NULL,
             message TEXT NOT NULL,
             status TEXT CHECK(status IN ('pending', 'delivered', 'seen')) DEFAULT 'pending',
             timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (senderid) REFERENCES users(userid),
-            FOREIGN KEY (recipientid) REFERENCES users(userid)
+            FOREIGN KEY (senderuuid) REFERENCES users(userid),
+            FOREIGN KEY (recipientuuid) REFERENCES users(userid)
         );
         """
         try:
@@ -131,17 +131,36 @@ class MessageDatabase:
             if conn:
                 conn.close()
 
-    def get_messages(self, user_id: str) -> List[Tuple]:
-        """Retrieve all messages for a specific user (as sender or receiver)."""
-        sql = """SELECT sender_id, receiver_id, content, timestamp 
-                FROM messages 
-                WHERE sender_id = ? OR receiver_id = ?
-                ORDER BY timestamp DESC;"""
+    def get_messages(self, sender_uuid: str, receiver_uuid: str) -> List[Tuple]:
+        """Retrieve messages based on sender and receiver UUIDs.
+        Empty strings for either UUID will match all values for that field."""
         try:
             conn = self.connect()
             cursor = conn.cursor()
-            cursor.execute(sql, (user_id, user_id))
+            
+            # Build the WHERE clause based on which UUIDs are provided
+            conditions = []
+            params = []
+            
+            if sender_uuid:
+                conditions.append("senderuuid = ?")
+                params.append(sender_uuid)
+            if receiver_uuid:
+                conditions.append("recipientuuid = ?")
+                params.append(receiver_uuid)
+            
+            # If no conditions, return all messages
+            where_clause = " AND ".join(conditions) if conditions else "1=1"
+            
+            sql = f"""SELECT senderuuid, recipientuuid, message, status, timestamp 
+                    FROM messages 
+                    WHERE {where_clause}
+                    ORDER BY timestamp DESC;"""
+            
+            print(f"Executing query: {sql} with params: {params}")
+            cursor.execute(sql, params)
             return cursor.fetchall()
+            
         except sqlite3.Error as e:
             print(f"Error retrieving messages: {e}")
             return []
@@ -163,6 +182,60 @@ class MessageDatabase:
             if conn:
                 conn.close()
                 
+    def get_user_uuid(self, username: str) -> tuple[bool, str, str]:
+        """
+        Get a user's UUID by their username.
+        Returns (success, error_message, uuid)
+        """
+        try:
+            conn = self.connect()
+            if conn is None:
+                return False, "Database connection failed", ""
+
+            cursor = conn.cursor()
+            cursor.execute("SELECT userid FROM users WHERE username = ?", (username,))
+            user = cursor.fetchone()
+            
+            if not user:
+                return False, f"User {username} not found", ""
+                
+            return True, "", str(user[0])
+            
+        except sqlite3.Error as e:
+            print(f"Error getting user UUID: {e}")
+            return False, str(e), ""
+        finally:
+            if conn:
+                conn.close()
+
+    def store_message(self, sender_uuid: str, recipient_uuid: str, message_text: str) -> tuple[bool, str]:
+        """
+        Store a message in the database.
+        Returns (success, error_message)
+        """
+        try:
+            conn = self.connect()
+            if conn is None:
+                return False, "Database connection failed"
+
+            cursor = conn.cursor()
+            
+            # Insert the message using UUIDs directly
+            cursor.execute("""
+                INSERT INTO messages (senderuuid, recipientuuid, message, status)
+                VALUES (?, ?, ?, 'pending')
+            """, (sender_uuid, recipient_uuid, message_text))
+            
+            conn.commit()
+            return True, ""
+            
+        except sqlite3.Error as e:
+            print(f"Error storing message: {e}")
+            return False, str(e)
+        finally:
+            if conn:
+                conn.close()
+
     def search_accounts(self, search_term: str) -> list[dict]:
         """
         Search for user accounts.

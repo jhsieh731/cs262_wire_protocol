@@ -224,11 +224,12 @@ class ClientGUI:
     def send_message(self):
             msg = self.entry.get()
             if msg and self.selected_account:
+                print(f"Selected account: {self.selected_account}, Message: {msg}")
                 self.entry.delete(0, tk.END)
                 request = {
                     "protocol-type": "json",
                     "action": "send_message",
-                    "content": {"recipient": self.selected_account, "message": msg},
+                    "content": {"sender_uuid": self.user_uuid, "recipient_username": self.selected_account, "message": msg},
                 }
                 send_to_server(request)
 

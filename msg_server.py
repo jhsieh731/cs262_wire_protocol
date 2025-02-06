@@ -136,7 +136,40 @@ class Message:
         elif self.jsonheader["action"] == "show_messages":
             pass
         elif self.jsonheader["action"] == "send_message":
-            pass
+            # Decode the request content
+            request_content = self._json_decode(self.request, "utf-8")
+            print("Send message request:", request_content)
+            
+            # Extract message details
+            sender_uuid = request_content.get("sender_uuid")
+            recipient_username = request_content.get("recipient_username")
+            message_text = request_content.get("message")
+
+            print("message details: ", sender_uuid, recipient_username, message_text)
+            
+            if not all([sender_uuid, recipient_username, message_text]):
+                response_content = {
+                    "success": False,
+                    "error": "Missing required fields",
+                    "response_type": "send_message"
+                }
+            else:
+                # Get recipient's UUID
+                success, error, recipient_uuid = db.get_user_uuid(recipient_username)
+                if not success:
+                    response_content = {
+                        "success": False,
+                        "error": error,
+                        "response_type": "send_message"
+                    }
+                else:
+                    # Store the message
+                    success, error = db.store_message(sender_uuid, recipient_uuid, message_text)
+                    response_content = {
+                        "success": success,
+                        "error": error,
+                        "response_type": "send_message"
+                    }
         elif self.jsonheader["action"] == "mark_read":
             pass
         elif self.jsonheader["action"] == "delete_messages":
