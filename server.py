@@ -4,6 +4,9 @@ import selectors
 from msg_server import Message
 
 sel = selectors.DefaultSelector()
+online_sockets = {}
+
+
 
 # set up listening server
 host, port = sys.argv[1], int(sys.argv[2])

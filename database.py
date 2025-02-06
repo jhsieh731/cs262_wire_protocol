@@ -20,15 +20,17 @@ class MessageDatabase:
 
     def create_tables(self):
         """Create the messages table if it doesn't exist."""
-        create_table_sql = """
+        create_users_sql = """
         CREATE TABLE users (
             userid INTEGER PRIMARY KEY AUTOINCREMENT,
             username TEXT UNIQUE NOT NULL,
             hashed_password TEXT NOT NULL,
             associated_socket TEXT
         );
+        """
 
 
+        create_messages_sql = """
         CREATE TABLE messages (
             msgid INTEGER PRIMARY KEY AUTOINCREMENT,
             senderid INTEGER NOT NULL,
@@ -44,7 +46,9 @@ class MessageDatabase:
             conn = self.connect()
             if conn is not None:
                 cursor = conn.cursor()
-                cursor.execute(create_table_sql)
+                cursor.execute(create_users_sql)
+                conn.commit()
+                cursor.execute(create_messages_sql)
                 conn.commit()
             else:
                 print("Error: Could not establish database connection")
@@ -54,12 +58,13 @@ class MessageDatabase:
             if conn:
                 conn.close()
 
-    def login_or_create_account(self, username: str, password: str):
+    def login_or_create_account(self, username: str, password: str, socket:str):
         """Login if the username and password match exactly 1 record, create an account if the username does not match any, else return an empty list."""
         login_sql = """SELECT * FROM users WHERE username = ? AND hashed_password = ?;"""
-        create_account_sql = """INSERT INTO users (username, hashed_password) VALUES (?, ?);"""
+        create_account_sql = """INSERT INTO users (username, hashed_password, associated_socket) VALUES (?, ?, ?);"""
         check_username_sql = """SELECT * FROM users WHERE username = ?;"""
-        
+        update_socket_sql = """UPDATE users SET associated_socket = ? WHERE userid = ?;"""
+
         try:
             conn = self.connect()
             conn.row_factory = sqlite3.Row
@@ -69,13 +74,17 @@ class MessageDatabase:
             cursor.execute(login_sql, (username, password))
             user = cursor.fetchone()
             if user:
+                # update socket
+                print("logging in, socket: ", socket, len(socket))
+                cursor.execute(update_socket_sql, (socket, user["userid"]))
+                conn.commit()
                 return [dict(user)]
             
             # Check if the username is unique
             cursor.execute(check_username_sql, (username,))
             if cursor.fetchone() is None:
                 # Create a new account
-                cursor.execute(create_account_sql, (username, password))
+                cursor.execute(create_account_sql, (username, password, socket))
                 conn.commit()
                 cursor.execute(login_sql, (username, password))
                 new_user = cursor.fetchone()
