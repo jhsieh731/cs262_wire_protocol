@@ -24,8 +24,6 @@ def accept_wrapper(sock):
     sel.register(conn, selectors.EVENT_READ, data=message)
 
 
-# handle accepted connections
-
 # continually listen for connections from selector
 try:
     while True:
