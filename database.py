@@ -208,6 +208,31 @@ class MessageDatabase:
             if conn:
                 conn.close()
 
+    def get_associated_socket(self, user_uuid: str) -> str:
+        """
+        Get the associated socket for a user by their UUID.
+        Returns the socket string if found, empty string if not found or error.
+        """
+        try:
+            conn = self.connect()
+            if conn is None:
+                return ""
+
+            cursor = conn.cursor()
+            cursor.execute("SELECT associated_socket FROM users WHERE userid = ?", (user_uuid,))
+            result = cursor.fetchone()
+            
+            if result and result[0]:
+                return result[0]
+            return ""
+            
+        except sqlite3.Error as e:
+            print(f"Error getting associated socket: {e}")
+            return ""
+        finally:
+            if conn:
+                conn.close()
+
     def store_message(self, sender_uuid: str, recipient_uuid: str, message_text: str) -> tuple[bool, str]:
         """
         Store a message in the database.
@@ -220,11 +245,17 @@ class MessageDatabase:
 
             cursor = conn.cursor()
             
+            # Get recipient's associated socket
+            recipient_socket = self.get_associated_socket(recipient_uuid)
+            
+            # Set message status based on recipient's socket status
+            status = "delivered" if recipient_socket else "pending"
+            
             # Insert the message using UUIDs directly
             cursor.execute("""
                 INSERT INTO messages (senderuuid, recipientuuid, message, status)
-                VALUES (?, ?, ?, 'pending')
-            """, (sender_uuid, recipient_uuid, message_text))
+                VALUES (?, ?, ?, ?)
+            """, (sender_uuid, recipient_uuid, message_text, status))
             
             conn.commit()
             return True, ""

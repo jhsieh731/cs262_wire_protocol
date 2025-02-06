@@ -166,12 +166,46 @@ class Message:
                         "response_type": "send_message"
                     }
                 else:
+                    # Get recipient's associated socket
+                    recipient_socket = db.get_associated_socket(recipient_uuid)
+                    
                     # Store the message
                     success, error = db.store_message(sender_uuid, recipient_uuid, message_text)
+                    
+                    # If recipient is active, relay the message
+                    if recipient_socket:
+                        # Create message content for recipient
+                        relay_content = {
+                            "message": message_text,
+                            "sender_uuid": sender_uuid,
+                            "response_type": "receive_message"
+                        }
+                        
+                        # Convert content to bytes for sending
+                        relay_content_bytes = self._json_encode(relay_content, "utf-8")
+                        relay_message = self._create_message(
+                            content_bytes=relay_content_bytes,
+                            action="receive_message",
+                            content_length=len(relay_content_bytes)
+                        )
+                        
+                        # Send message to recipient's socket
+                        try:
+                            # Find the socket object associated with the recipient
+                            for key, data in self.selector.get_map().items():
+                                if data.data and isinstance(data.data, Message) and str(data.data.addr) == recipient_socket:
+                                    data.data._send_buffer += relay_message
+                                    data.data._set_selector_events_mask("w")
+                                    break
+                        except Exception as e:
+                            print(f"Error relaying message: {e}")
+                    
+                    # Create response for sender
                     response_content = {
                         "success": success,
                         "error": error,
-                        "response_type": "send_message"
+                        "response_type": "send_message",
+                        "delivered": bool(recipient_socket)
                     }
         elif self.jsonheader["action"] == "mark_read":
             pass
