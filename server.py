@@ -1,7 +1,7 @@
 import sys
 import socket
 import selectors
-import types
+from msg_server import Message
 
 sel = selectors.DefaultSelector()
 
@@ -20,28 +20,11 @@ def accept_wrapper(sock):
     conn, addr = sock.accept()  # Should be ready to read
     print(f"Accepted connection from {addr}")
     conn.setblocking(False)
-    data = types.SimpleNamespace(addr=addr, inb=b"", outb=b"")
-    events = selectors.EVENT_READ | selectors.EVENT_WRITE
-    sel.register(conn, events, data=data)
+    message = Message(sel, conn, addr)
+    sel.register(conn, selectors.EVENT_READ, data=message)
 
 
 # handle accepted connections
-def service_connection(key, mask):
-    sock = key.fileobj
-    data = key.data
-    if mask & selectors.EVENT_READ:
-        recv_data = sock.recv(1024)  # Should be ready to read
-        if recv_data:
-            data.outb += recv_data
-        else:
-            print(f"Closing connection to {data.addr}")
-            sel.unregister(sock)
-            sock.close()
-    if mask & selectors.EVENT_WRITE:
-        if data.outb:
-            print(f"Echoing {data.outb!r} to {data.addr}")
-            sent = sock.send(data.outb)  # Should be ready to write
-            data.outb = data.outb[sent:]
 
 # continually listen for connections from selector
 try:
@@ -51,9 +34,15 @@ try:
             if key.data is None:
                 accept_wrapper(key.fileobj)
             else:
-                service_connection(key, mask)
+                message = key.data
+                try:
+                    message.process_events(mask)
+                except Exception:
+                    print(
+                        f"Main: Error: Exception for {message.addr}:\n"
+                    )
+                    message.close()
 except KeyboardInterrupt:
     print("Caught keyboard interrupt, exiting")
 finally:
     sel.close()
-
