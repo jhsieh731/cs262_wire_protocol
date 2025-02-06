@@ -116,8 +116,23 @@ class Message:
                     "uuid": accounts[0]["userid"],
                     "response_type": "login_register"
                 }
-        elif self.jsonheader["action"] == "filter_accounts":
-            pass
+        elif self.jsonheader["action"] == "search_accounts":
+            print("searching accounts")
+            # Decode the request content
+            request_content = self._json_decode(self.request, "utf-8")
+            print("Request content:", request_content)
+
+            search_term = request_content.get("search_term", "")
+            print("search term: ", search_term)
+            
+            # Search for accounts
+            accounts = db.search_accounts(search_term)
+            print(f"Found accounts: {accounts}")
+            
+            response_content = {
+                "accounts": accounts,
+                "response_type": "search_accounts"
+            }
         elif self.jsonheader["action"] == "show_messages":
             pass
         elif self.jsonheader["action"] == "send_message":
@@ -133,6 +148,7 @@ class Message:
                 "content": request_content,
                 "response_type": "echo"
             }
+            
         content_bytes = self._json_encode(response_content, "utf-8")
         response = {
             "content_bytes": content_bytes,

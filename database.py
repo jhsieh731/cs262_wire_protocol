@@ -162,3 +162,55 @@ class MessageDatabase:
         finally:
             if conn:
                 conn.close()
+                
+    def search_accounts(self, search_term: str) -> list[dict]:
+        """
+        Search for user accounts.
+        Returns a list of user dictionaries.
+        """
+        try:
+            print(f"\nSearching for term: '{search_term}'")
+            conn = self.connect()
+            if conn is None:
+                print("Database connection failed")
+                return []
+                
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            
+            # Debug: Show all users in database
+            cursor.execute("SELECT userid, username FROM users")
+            all_users = cursor.fetchall()
+            print("\nAll users in database:")
+            for user in all_users:
+                print(f"  - userid={user['userid']}, username={user['username']}")
+            
+            # Get results
+            if search_term == "":
+                search_sql = """
+                    SELECT userid, username 
+                    FROM users 
+                    ORDER BY username ASC
+                """
+                print("\nExecuting SQL to get all users")
+                cursor.execute(search_sql)
+            else:
+                search_sql = """
+                    SELECT userid, username 
+                    FROM users 
+                    WHERE username LIKE ? || '%'
+                    ORDER BY username ASC
+                """
+                print(f"\nExecuting SQL to search for '{search_term}'")
+                cursor.execute(search_sql, (search_term,))
+            
+            results = [dict(row) for row in cursor.fetchall()]
+            print(f"\nQuery results: {results}")
+            return results
+            
+        except sqlite3.Error as e:
+            print(f"Error searching accounts: {e}")
+            return [], 0
+        finally:
+            if conn:
+                conn.close()

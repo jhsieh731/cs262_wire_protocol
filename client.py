@@ -147,18 +147,18 @@ class ClientGUI:
         request = {
             "protocol-type": "json",
             "action": "search_accounts",
-            "content": {"search_term": search_term, "page": self.current_page, "per_page": self.accounts_per_page},
+            "content": {"search_term": search_term},
         }
         send_to_server(request)
 
     def prev_page(self):
         if self.current_page > 0:
             self.current_page -= 1
-            self.load_accounts()
+            self.search_accounts()
 
     def next_page(self):
         self.current_page += 1
-        self.load_accounts()
+        self.search_accounts()
 
     def load_accounts(self):
         request = {
@@ -213,7 +213,8 @@ class ClientGUI:
     def update_accounts_list(self, accounts):
         self.accounts_listbox.delete(0, tk.END)
         for account in accounts:
-            self.accounts_listbox.insert(tk.END, account)
+            # Display username in the listbox
+            self.accounts_listbox.insert(tk.END, account['username'])
 
     def update_messages_list(self, messages):
         self.messages_listbox.delete(0, tk.END)
@@ -256,6 +257,16 @@ class ClientGUI:
         if response_type == "login_register":
             self.user_uuid = response.get("uuid", None)
             self.create_chat_page()
+        elif response_type == "search_accounts":
+            accounts = response.get("accounts", [])
+            print("Received accounts:", accounts)
+            # Update the accounts list
+            self.update_accounts_list(accounts)
+            
+            # Disable pagination buttons since we're not using pagination
+            self.prev_button["state"] = tk.DISABLED
+            self.next_button["state"] = tk.DISABLED
+            
         elif response_type == "check_username":
             # Handle check username response
             pass
