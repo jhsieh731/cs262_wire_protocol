@@ -90,7 +90,6 @@ class MessageDatabase:
                 new_user = cursor.fetchone()
                 if new_user:
                     return [dict(new_user)]
-
             return []
         except sqlite3.Error as e:
             print(f"Error in login_or_create_account: {e}")

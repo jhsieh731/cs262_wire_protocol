@@ -6,11 +6,12 @@ import sys
 
 # TODO: link this with client/server...
 class Message:
-    def __init__(self, selector, sock, addr, request):
+    def __init__(self, selector, sock, addr, gui, request):
         self.selector = selector
         self.sock = sock
         self.addr = addr
         self.request = request
+        self.gui = gui
         self._recv_buffer = b""
         self._send_buffer = b""
         self._request_queued = False
@@ -76,9 +77,6 @@ class Message:
     ):
         # TODO: rethink header
         jsonheader = {
-            # "byteorder": sys.byteorder,
-            # "content-type": content_type,
-            # "content-encoding": content_encoding,
             "content-length": content_length,
             "action": action,
         }
@@ -92,11 +90,6 @@ class Message:
         content = self.response
         result = content.get("result")
         print(f"Got result: {result}")
-
-    # TODO: probably this binary would be our custom one (rename?)
-    def _process_response_binary_content(self):
-        content = self.response
-        print(f"Got response: {content!r}")
 
     def process_events(self, mask):
         if mask & selectors.EVENT_READ:
@@ -165,7 +158,6 @@ class Message:
             "content_bytes": content,
             "action": action,
             "content_length": len(content),
-
         }
         print(f"Request: {req!r}")
         message = self._create_message(**req)
