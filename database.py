@@ -20,15 +20,17 @@ class MessageDatabase:
 
     def create_tables(self):
         """Create the messages table if it doesn't exist."""
-        create_table_sql = """
+        create_users_sql = """
         CREATE TABLE users (
             userid INTEGER PRIMARY KEY AUTOINCREMENT,
             username TEXT UNIQUE NOT NULL,
             hashed_password TEXT NOT NULL,
             associated_socket TEXT
         );
+        """
 
 
+        create_messages_sql = """
         CREATE TABLE messages (
             msgid INTEGER PRIMARY KEY AUTOINCREMENT,
             senderid INTEGER NOT NULL,
@@ -44,7 +46,9 @@ class MessageDatabase:
             conn = self.connect()
             if conn is not None:
                 cursor = conn.cursor()
-                cursor.execute(create_table_sql)
+                cursor.execute(create_users_sql)
+                conn.commit()
+                cursor.execute(create_messages_sql)
                 conn.commit()
             else:
                 print("Error: Could not establish database connection")
