@@ -103,7 +103,7 @@ class Message:
         # Create response content and encode it
         if self.jsonheader["action"] == "login_register":
             # try to login
-            accounts = db.login_or_create_account(request_content["username"], request_content["password"])
+            accounts = db.login_or_create_account(request_content["username"], request_content["password"], str(self.addr))
             print("account: ", accounts)
             if (len(accounts) != 1):
                 response_content = {
@@ -113,7 +113,7 @@ class Message:
                 response_content["response"] = "Invalid username or password"
             else:
                 response_content = {
-                    "response": accounts[0]["userid"],
+                    "uuid": accounts[0]["userid"],
                     "response_type": "login_register"
                 }
         elif self.jsonheader["action"] == "filter_accounts":

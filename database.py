@@ -54,12 +54,13 @@ class MessageDatabase:
             if conn:
                 conn.close()
 
-    def login_or_create_account(self, username: str, password: str):
+    def login_or_create_account(self, username: str, password: str, socket:str):
         """Login if the username and password match exactly 1 record, create an account if the username does not match any, else return an empty list."""
         login_sql = """SELECT * FROM users WHERE username = ? AND hashed_password = ?;"""
-        create_account_sql = """INSERT INTO users (username, hashed_password) VALUES (?, ?);"""
+        create_account_sql = """INSERT INTO users (username, hashed_password, associated_socket) VALUES (?, ?, ?);"""
         check_username_sql = """SELECT * FROM users WHERE username = ?;"""
-        
+        update_socket_sql = """UPDATE users SET associated_socket = ? WHERE userid = ?;"""
+
         try:
             conn = self.connect()
             conn.row_factory = sqlite3.Row
@@ -69,13 +70,17 @@ class MessageDatabase:
             cursor.execute(login_sql, (username, password))
             user = cursor.fetchone()
             if user:
+                # update socket
+                print("logging in, socket: ", socket, len(socket))
+                cursor.execute(update_socket_sql, (socket, user["userid"]))
+                conn.commit()
                 return [dict(user)]
             
             # Check if the username is unique
             cursor.execute(check_username_sql, (username,))
             if cursor.fetchone() is None:
                 # Create a new account
-                cursor.execute(create_account_sql, (username, password))
+                cursor.execute(create_account_sql, (username, password, socket))
                 conn.commit()
                 cursor.execute(login_sql, (username, password))
                 new_user = cursor.fetchone()
