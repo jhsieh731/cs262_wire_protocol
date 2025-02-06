@@ -1,15 +1,18 @@
 import sys
 import socket
 import selectors
+import types
 import threading
 import tkinter as tk
 from tkinter import scrolledtext
 import msg_client
-
+from database import MessageDatabase
 
 # Networking Setup
 sel = selectors.DefaultSelector()
+messages = [b"Message 1 from client.", b"Message 2 from client."]
 host, port = sys.argv[1], int(sys.argv[2])
+db = MessageDatabase()
 
 # GUI Setup
 class ClientGUI:
@@ -329,20 +332,44 @@ root = tk.Tk()
 gui = ClientGUI(root)
 
 # Networking Functions
-def start_connection(host, port, gui, request):
+def start_connection(host, port):
     addr = (host, port)
     print(f"Starting connection to {addr}")
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.setblocking(False)
     sock.connect_ex(addr)
     events = selectors.EVENT_READ | selectors.EVENT_WRITE
-    message = msg_client.Message(sel, sock, addr, gui, request)
+    content = dict()
+    # json header
+    init_request = {
+        "action": "start_connection",
+        "content": content,
+    }
+    message = msg_client.Message(sel, sock, addr, init_request)
     sel.register(sock, events, data=message)
 
+
+# def service_connection(key, mask):
+#     sock = key.fileobj
+#     data = key.data
+#     if mask & selectors.EVENT_READ:
+#         recv_data = sock.recv(1024)
+#         if recv_data:
+#             data.outb += recv_data
+#         else:
+#             print(f"Closing connection to {data.addr}")
+#             sel.unregister(sock)
+#             sock.close()
+#     if mask & selectors.EVENT_WRITE:
+#         if data.outb:
+#             # return_data = trans_to_pig_latin(data.outb.decode("utf-8")) do things here
+#             return_data = return_data.encode("utf-8")
+#             sent = sock.send(return_data)
+#             data.outb = data.outb[sent:]
+
 # Thread for handling server communication
-def network_thread(request):
-    print(request)
-    start_connection(host, port, gui, request)
+def network_thread():
+    start_connection(host, port)
     try:
         while True:
             events = sel.select(timeout=1)
@@ -365,9 +392,17 @@ def network_thread(request):
         sel.close()
 
 # Send message to the server
-def send_to_server(request):
+def send_to_server(message):
+    # for key in sel.get_map().values():
+    #     key.data.outb += message
     for key in list(sel.get_map().values()):
         msg_obj = key.data  # This is the Message instance
+        
+        # Prepare the new request
+        request = {
+            "action": "send",
+            "content": {"message": message},
+        }
         
         # Set the request and queue it
         msg_obj.request = request
@@ -376,7 +411,14 @@ def send_to_server(request):
         
         # Set selector to listen for write events
         msg_obj._set_selector_events_mask("w")
+        db.store_message("server1", "server2", message)
 
+# Main GUI Application
+root = tk.Tk()
+gui = ClientGUI(root)
+
+# Start the network thread
+threading.Thread(target=network_thread, daemon=True).start()
 
 # Run the Tkinter main loop
 root.mainloop()

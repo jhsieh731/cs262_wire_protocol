@@ -3,15 +3,13 @@ import json
 import selectors
 import struct
 import sys
-from database import MessageDatabase
-
-db = MessageDatabase()
 
 request_search = {
     "morpheus": "Follow the white rabbit. \U0001f430",
     "ring": "In the caves beneath the Misty Mountains. \U0001f48d",
     "\U0001f436": "\U0001f43e Playing ball! \U0001f3d0",
 }
+
 
 class Message:
     def __init__(self, selector, sock, addr):
@@ -97,9 +95,6 @@ class Message:
     def _create_response_json_content(self):
         # First decode the request content
         request_content = self._json_decode(self.request, "utf-8")
-        response_content = {}
-        print("action: ", self.jsonheader["action"])
-        # TODO: switch statements here
         # Create response content and encode it
         if self.jsonheader["action"] == "login_register":
             # try to login
@@ -256,10 +251,8 @@ class Message:
 
     def process_events(self, mask):
         if mask & selectors.EVENT_READ:
-            print("read")
             self.read()
         if mask & selectors.EVENT_WRITE:
-            print("write")
             self.write()
 
     def read(self):
