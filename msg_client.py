@@ -6,12 +6,11 @@ import sys
 
 # TODO: link this with client/server...
 class Message:
-    def __init__(self, selector, sock, addr, gui, request):
+    def __init__(self, selector, sock, addr, request):
         self.selector = selector
         self.sock = sock
         self.addr = addr
         self.request = request
-        self.gui = gui
         self._recv_buffer = b""
         self._send_buffer = b""
         self._request_queued = False
@@ -77,6 +76,9 @@ class Message:
     ):
         # TODO: rethink header
         jsonheader = {
+            # "byteorder": sys.byteorder,
+            # "content-type": content_type,
+            # "content-encoding": content_encoding,
             "content-length": content_length,
             "action": action,
         }
@@ -90,6 +92,11 @@ class Message:
         content = self.response
         result = content.get("result")
         print(f"Got result: {result}")
+
+    # TODO: probably this binary would be our custom one (rename?)
+    def _process_response_binary_content(self):
+        content = self.response
+        print(f"Got response: {content!r}")
 
     def process_events(self, mask):
         if mask & selectors.EVENT_READ:
@@ -154,6 +161,7 @@ class Message:
             "content_bytes": content,
             "action": action,
             "content_length": len(content),
+
         }
         # content_type = self.request["type"]
         # content_encoding = self.request["encoding"]
@@ -208,6 +216,21 @@ class Message:
         self._recv_buffer = self._recv_buffer[content_len:]
         self.response = self._json_decode(data, "utf-8")
         print(f"Received response {self.response!r} from {self.addr}")
-        self.gui.handle_server_response(self.response)
-
+        # if self.jsonheader["content-type"] == "text/json":
+        #     encoding = self.jsonheader["content-encoding"]
+        #     self.response = self._json_decode(data, encoding)
+        #     print(f"Received response {self.response!r} from {self.addr}")
+        #     self._process_response_json_content()
+        # else:
+        #     # Binary or unknown content-type
+        #     self.response = data
+        #     print(
+        #         f"Received {self.jsonheader['content-type']} "
+        #         f"response from {self.addr}"
+        #     )
+        #     self._process_response_binary_content()
+        # Close when response has been processed
+        # self.close()
+        # TODO: do we need to do anything, idk
+        # self._set_selector_events_mask("rw")
         

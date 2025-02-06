@@ -21,23 +21,12 @@ class MessageDatabase:
     def create_tables(self):
         """Create the messages table if it doesn't exist."""
         create_table_sql = """
-        CREATE TABLE users (
-            userid INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT UNIQUE NOT NULL,
-            hashed_password TEXT NOT NULL,
-            associated_socket TEXT
-        );
-
-
-        CREATE TABLE messages (
-            msgid INTEGER PRIMARY KEY AUTOINCREMENT,
-            senderid INTEGER NOT NULL,
-            recipientid INTEGER NOT NULL,
-            message TEXT NOT NULL,
-            status TEXT CHECK(status IN ('pending', 'delivered', 'seen')) DEFAULT 'pending',
-            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (senderid) REFERENCES users(userid),
-            FOREIGN KEY (recipientid) REFERENCES users(userid)
+        CREATE TABLE IF NOT EXISTS messages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            sender_id TEXT NOT NULL,
+            receiver_id TEXT NOT NULL,
+            content TEXT NOT NULL,
+            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
         );
         """
         try:
@@ -50,57 +39,6 @@ class MessageDatabase:
                 print("Error: Could not establish database connection")
         except sqlite3.Error as e:
             print(f"Error creating table: {e}")
-        finally:
-            if conn:
-                conn.close()
-
-    def login_or_create_account(self, username: str, password: str):
-        """Login if the username and password match exactly 1 record, create an account if the username does not match any, else return an empty list."""
-        login_sql = """SELECT * FROM users WHERE username = ? AND hashed_password = ?;"""
-        create_account_sql = """INSERT INTO users (username, hashed_password) VALUES (?, ?);"""
-        check_username_sql = """SELECT * FROM users WHERE username = ?;"""
-        
-        try:
-            conn = self.connect()
-            conn.row_factory = sqlite3.Row
-            cursor = conn.cursor()
-            
-            # Check if the username and password match exactly 1 record
-            cursor.execute(login_sql, (username, password))
-            user = cursor.fetchone()
-            if user:
-                return [dict(user)]
-            
-            # Check if the username is unique
-            cursor.execute(check_username_sql, (username,))
-            if cursor.fetchone() is None:
-                # Create a new account
-                cursor.execute(create_account_sql, (username, password))
-                conn.commit()
-                cursor.execute(login_sql, (username, password))
-                new_user = cursor.fetchone()
-                if new_user:
-                    return [dict(new_user)]
-            
-            return []
-        except sqlite3.Error as e:
-            print(f"Error in login_or_create_account: {e}")
-            return []
-        finally:
-            if conn:
-                conn.close()
-
-    def check_unique_username(self, username: str) -> bool:
-        """Check if the username is unique."""
-        sql = """SELECT * FROM users WHERE username = ?;"""
-        try:
-            conn = self.connect()
-            cursor = conn.cursor()
-            cursor.execute(sql, (username,))
-            return cursor.fetchone() is None
-        except sqlite3.Error as e:
-            print(f"Error checking unique username: {e}")
-            return False
         finally:
             if conn:
                 conn.close()

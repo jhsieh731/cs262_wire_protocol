@@ -3,15 +3,13 @@ import json
 import selectors
 import struct
 import sys
-from database import MessageDatabase
-
-db = MessageDatabase()
 
 request_search = {
     "morpheus": "Follow the white rabbit. \U0001f430",
     "ring": "In the caves beneath the Misty Mountains. \U0001f48d",
     "\U0001f436": "\U0001f43e Playing ball! \U0001f3d0",
 }
+
 
 class Message:
     def __init__(self, selector, sock, addr):
@@ -97,42 +95,11 @@ class Message:
     def _create_response_json_content(self):
         # First decode the request content
         request_content = self._json_decode(self.request, "utf-8")
-        response_content = {}
-        print("action: ", self.jsonheader["action"])
-        # TODO: switch statements here
         # Create response content and encode it
-        if self.jsonheader["action"] == "login_register":
-            # try to login
-            accounts = db.login_or_create_account(request_content["username"], request_content["password"])
-            print("account: ", accounts)
-            if (len(accounts) != 1):
-                response_content = {
-                    "response": "Invalid username or password",
-                    "response_type": "error"
-                }
-                response_content["response"] = "Invalid username or password"
-            else:
-                response_content = {
-                    "response": accounts[0]["userid"],
-                    "response_type": "login_register"
-                }
-        elif self.jsonheader["action"] == "filter_accounts":
-            pass
-        elif self.jsonheader["action"] == "show_messages":
-            pass
-        elif self.jsonheader["action"] == "send_message":
-            pass
-        elif self.jsonheader["action"] == "mark_read":
-            pass
-        elif self.jsonheader["action"] == "delete_messages":
-            pass
-        elif self.jsonheader["action"] == "delete_account":
-            pass
-        else:
-            response_content = {
-                "content": request_content,
-                "response_type": "echo"
-            }
+        response_content = {
+            "content": request_content,
+            "action": "response"
+        }
         content_bytes = self._json_encode(response_content, "utf-8")
         response = {
             "content_bytes": content_bytes,
@@ -143,10 +110,8 @@ class Message:
 
     def process_events(self, mask):
         if mask & selectors.EVENT_READ:
-            print("read")
             self.read()
         if mask & selectors.EVENT_WRITE:
-            print("write")
             self.write()
 
     def read(self):
