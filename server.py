@@ -4,6 +4,9 @@ import selectors
 from msg_server import Message
 
 sel = selectors.DefaultSelector()
+online_sockets = {}
+
+
 
 # set up listening server
 host, port = sys.argv[1], int(sys.argv[2])
@@ -23,8 +26,6 @@ def accept_wrapper(sock):
     message = Message(sel, conn, addr)
     sel.register(conn, selectors.EVENT_READ, data=message)
 
-
-# handle accepted connections
 
 # continually listen for connections from selector
 try:
