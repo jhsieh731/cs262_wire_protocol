@@ -236,50 +236,59 @@ class MessageDatabase:
             if conn:
                 conn.close()
 
-    def search_accounts(self, search_term: str) -> list[dict]:
+    def search_accounts(self, search_term: str, current_page: int = 0, accounts_per_page: int = 10) -> tuple[list[dict], int]:
         """
-        Search for user accounts.
-        Returns a list of user dictionaries.
+        Search for user accounts with pagination.
+        Returns (list of user dictionaries, total count of matching users)
         """
         try:
-            print(f"\nSearching for term: '{search_term}'")
+            print(f"\nSearching for term: '{search_term}' (page {current_page}, per_page {accounts_per_page})")
             conn = self.connect()
             if conn is None:
                 print("Database connection failed")
-                return []
+                return [], 0
                 
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
             
-            # Debug: Show all users in database
-            cursor.execute("SELECT userid, username FROM users")
-            all_users = cursor.fetchall()
-            print("\nAll users in database:")
-            for user in all_users:
-                print(f"  - userid={user['userid']}, username={user['username']}")
+            # First get total count
+            if search_term == "":
+                count_sql = "SELECT COUNT(*) as total FROM users"
+                cursor.execute(count_sql)
+            else:
+                count_sql = "SELECT COUNT(*) as total FROM users WHERE username LIKE ? || '%'"
+                cursor.execute(count_sql, (search_term,))
             
-            # Get results
+            total_count = cursor.fetchone()["total"]
+            print(f"Total matching users: {total_count}")
+            
+            # Calculate offset
+            offset = current_page * accounts_per_page
+            
+            # Get paginated results
             if search_term == "":
                 search_sql = """
                     SELECT userid, username 
                     FROM users 
                     ORDER BY username ASC
+                    LIMIT ? OFFSET ?
                 """
-                print("\nExecuting SQL to get all users")
-                cursor.execute(search_sql)
+                print(f"\nExecuting SQL to get users (limit {accounts_per_page}, offset {offset})")
+                cursor.execute(search_sql, (accounts_per_page, offset))
             else:
                 search_sql = """
                     SELECT userid, username 
                     FROM users 
                     WHERE username LIKE ? || '%'
                     ORDER BY username ASC
+                    LIMIT ? OFFSET ?
                 """
                 print(f"\nExecuting SQL to search for '{search_term}'")
-                cursor.execute(search_sql, (search_term,))
+                cursor.execute(search_sql, (search_term, accounts_per_page, offset))
             
             results = [dict(row) for row in cursor.fetchall()]
             print(f"\nQuery results: {results}")
-            return results
+            return results, total_count
             
         except sqlite3.Error as e:
             print(f"Error searching accounts: {e}")

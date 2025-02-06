@@ -123,14 +123,17 @@ class Message:
             print("Request content:", request_content)
 
             search_term = request_content.get("search_term", "")
-            print("search term: ", search_term)
+            current_page = request_content.get("current_page", 0)
+            accounts_per_page = request_content.get("accounts_per_page", 10)
+            print(f"Searching for accounts with term: {search_term} (page {current_page}, per_page {accounts_per_page})")
             
-            # Search for accounts
-            accounts = db.search_accounts(search_term)
-            print(f"Found accounts: {accounts}")
+            # Search for accounts with pagination
+            accounts, total_count = db.search_accounts(search_term, current_page, accounts_per_page)
+            print(f"Found {len(accounts)} accounts (total: {total_count})")
             
             response_content = {
                 "accounts": accounts,
+                "total_count": total_count,
                 "response_type": "search_accounts"
             }
         elif self.jsonheader["action"] == "show_messages":

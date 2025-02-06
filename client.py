@@ -20,7 +20,8 @@ class ClientGUI:
         self.user_uuid = None
         self.selected_accounts = None
         self.current_page = 0
-        self.accounts_per_page = 10
+        self.accounts_per_page = 1
+        self.max_accounts_page = 0
 
         self.login_frame = tk.Frame(master)
         self.chat_frame = tk.Frame(master)
@@ -147,7 +148,7 @@ class ClientGUI:
         request = {
             "protocol-type": "json",
             "action": "search_accounts",
-            "content": {"search_term": search_term},
+            "content": {"search_term": search_term, "current_page": self.current_page, "accounts_per_page": self.accounts_per_page},
         }
         send_to_server(request)
 
@@ -157,16 +158,9 @@ class ClientGUI:
             self.search_accounts()
 
     def next_page(self):
-        self.current_page += 1
-        self.search_accounts()
-
-    def load_accounts(self):
-        request = {
-            "protocol-type": "json",
-            "action": "load_accounts",
-            "content": {"page": self.current_page, "per_page": self.accounts_per_page},
-        }
-        send_to_server(request)
+        if self.current_page < self.max_accounts_page:
+            self.current_page += 1
+            self.search_accounts()
 
     def on_account_select(self, event):
         selection = event.widget.curselection()
@@ -260,13 +254,18 @@ class ClientGUI:
             self.create_chat_page()
         elif response_type == "search_accounts":
             accounts = response.get("accounts", [])
-            print("Received accounts:", accounts)
+            total_count = response.get("total_count", 0)
+            print(f"Received {len(accounts)} accounts (total: {total_count})")
+            
             # Update the accounts list
             self.update_accounts_list(accounts)
             
-            # Disable pagination buttons since we're not using pagination
-            self.prev_button["state"] = tk.DISABLED
-            self.next_button["state"] = tk.DISABLED
+            # Update pagination state. Start index from 0
+            self.max_accounts_page = (total_count // self.accounts_per_page) - 1
+            
+            # Enable/disable pagination buttons
+            self.prev_button["state"] = tk.NORMAL if self.current_page > 0 else tk.DISABLED
+            self.next_button["state"] = tk.NORMAL if self.current_page < self.max_accounts_page else tk.DISABLED
             
         elif response_type == "check_username":
             # Handle check username response
