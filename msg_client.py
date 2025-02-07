@@ -50,15 +50,17 @@ class Message:
             print(f"Sending {self._send_buffer!r} to {self.addr}")
             try:
                 # Should be ready to write
-                print(52)
                 sent = self.sock.send(self._send_buffer)
             except BlockingIOError:
                 # Resource temporarily unavailable (errno EWOULDBLOCK)
-                print("55 BlockingIOError")
                 pass
             else:
-                print(58)
                 self._send_buffer = self._send_buffer[sent:]
+                if sent and not self._send_buffer:
+                    self._jsonheader_len = None
+                    self.jsonheader = None
+                    self.request = None
+                    self.response_created = False
 
     # TODO: add fns for custom protocol
     def _json_encode(self, obj, encoding):

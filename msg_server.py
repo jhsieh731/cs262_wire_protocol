@@ -116,6 +116,26 @@ class Message:
                     "uuid": accounts[0]["userid"],
                     "response_type": "login_register"
                 }
+        elif self.jsonheader["action"] == "load_page_data":
+            print("loading page data")
+            # Decode the request content
+            request_content = self._json_decode(self.request, "utf-8")
+            print("Request content:", request_content)
+
+            user_uuid = request_content.get("uuid", None)
+
+            # Load page data
+            messages, num_pending, accounts, total_count = db.load_page_data(user_uuid)
+            print(f"Loaded page data from db")
+            
+            response_content = {
+                "messages": messages,
+                "num_pending": num_pending,
+                "accounts": accounts,
+                "total_count": total_count,
+                "response_type": "load_page_data"
+            }
+
         elif self.jsonheader["action"] == "search_accounts":
             print("searching accounts")
             # Decode the request content
@@ -124,7 +144,7 @@ class Message:
 
             search_term = request_content.get("search_term", "")
             current_page = request_content.get("current_page", 0)
-            accounts_per_page = request_content.get("accounts_per_page", 10)
+            accounts_per_page = 10
             print(f"Searching for accounts with term: {search_term} (page {current_page}, per_page {accounts_per_page})")
             
             # Search for accounts with pagination
@@ -136,8 +156,24 @@ class Message:
                 "total_count": total_count,
                 "response_type": "search_accounts"
             }
-        elif self.jsonheader["action"] == "show_messages":
-            pass
+        elif self.jsonheader["action"] == "load_messages":
+            # Decode the request content
+            request_content = self._json_decode(self.request, "utf-8")
+            print("Request content load messages:", request_content)
+            
+            user_uuid = request_content.get("uuid", None)
+            num_messages = request_content.get("num_messages", None)
+            print(f"Loading messages for user {user_uuid} and num_messages {num_messages}")
+            
+            # Load messages with pagination
+            messages, total_undelivered = db.load_messages(user_uuid, num_messages)
+            print(f"Found {len(messages)} messages (total: {total_undelivered})")
+            
+            response_content = {
+                "messages": messages,
+                "total_undelivered": total_undelivered,
+                "response_type": "load_messages"
+            }
         elif self.jsonheader["action"] == "send_message":
             # Decode the request content
             request_content = self._json_decode(self.request, "utf-8")
@@ -168,16 +204,19 @@ class Message:
                 else:
                     # Get recipient's associated socket
                     recipient_socket = db.get_associated_socket(recipient_uuid)
+
+                    sender_username = db.get_user_username(sender_uuid)
+                    print(sender_username)
                     
-                    # Store the message
-                    success, error = db.store_message(sender_uuid, recipient_uuid, message_text)
+                    status = False
                     
-                    # If recipient is active, relay the message
-                    if recipient_socket:
+                    # ensure all fields are there
+                    if recipient_socket and sender_username:
                         # Create message content for recipient
                         relay_content = {
                             "message": message_text,
                             "sender_uuid": sender_uuid,
+                            "sender_username": sender_username,
                             "response_type": "receive_message"
                         }
                         
@@ -194,11 +233,19 @@ class Message:
                             # Find the socket object associated with the recipient
                             for key, data in self.selector.get_map().items():
                                 if data.data and isinstance(data.data, Message) and str(data.data.addr) == recipient_socket:
+                                    print(f"Relaying message to {recipient_socket}")
+                                    status = True
                                     data.data._send_buffer += relay_message
                                     data.data._set_selector_events_mask("w")
                                     break
+                            else:
+                                print(f"Error: Could not find recipient socket {recipient_socket}")
+                                status = False
                         except Exception as e:
                             print(f"Error relaying message: {e}")
+
+                    # Store the message
+                    success, error = db.store_message(sender_uuid, recipient_uuid, message_text, status)
                     
                     # Create response for sender
                     response_content = {
@@ -207,10 +254,34 @@ class Message:
                         "response_type": "send_message",
                         "delivered": bool(recipient_socket)
                     }
-        elif self.jsonheader["action"] == "mark_read":
-            pass
+        elif self.jsonheader["action"] == "load_undelivered":
+            # Decode the request content
+            request_content = self._json_decode(self.request, "utf-8")
+            print("Request content load undelivered:", request_content)
+            
+            user_uuid = request_content.get("uuid", None)
+            num_messages = request_content.get("num_messages", 0)
+            print(f"Loading undelivered messages for user {user_uuid}")
+            
+            # Load undelivered messages
+            messages = db.load_undelivered(user_uuid, num_messages)
+            print(f"Found {len(messages)} undelivered messages")
+            
+            response_content = {
+                "messages": messages,
+                "response_type": "load_undelivered"
+            }
         elif self.jsonheader["action"] == "delete_messages":
-            pass
+            print("Deleting messages")
+            msg_ids = request_content.get("msgids", [])
+            db.delete_messages(msg_ids)
+            print(f"db delete_messages ran")
+            response_content = {
+                "response_type": "delete_messages",
+                "status": "success",
+                "num_deleted": len(msg_ids),
+                "message": "Messages successfully deleted"
+            }
         elif self.jsonheader["action"] == "delete_account":
             request_content = self._json_decode(self.request, "utf-8")
             user_uuid = request_content.get("uuid")

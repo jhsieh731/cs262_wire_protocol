@@ -14,9 +14,6 @@ Client actions:
     - log to database (including isdelivered)
 - Receive message:
     - if client receives message from server, push notif (delivered) on top
-- Read message: recipientid, senderid
-    - server hits messages database/table to check for any unseen messages from senderid to recipientid
-    - client displays messages
 - Delete message(s)
 - Delete account
 
