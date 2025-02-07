@@ -2,7 +2,7 @@ from database import MessageDatabase
 
 def view_all_messages():
     db = MessageDatabase()
-    messages = db.get_messages("server1")  # This will show messages where server1 is sender or receiver
+    messages = db.get_messages("", "")  # This will show messages where server1 is sender or receiver
     
     print("\nAll messages in database:")
     print("-" * 80)
@@ -10,11 +10,11 @@ def view_all_messages():
     print("-" * 80)
     
     for msg in messages:
-        sender, receiver, content, timestamp = msg
+        sender, receiver, message, status, timestamp = msg
         # Handle content whether it's bytes or string
-        if isinstance(content, bytes):
-            content = content.decode('utf-8')
-        print(f"{sender:15} | {receiver:15} | {str(content)[:30]:30} | {timestamp}")
+        if isinstance(message, bytes):
+            message = message.decode('utf-8')
+        print(f"{sender:15} | {receiver:15} | {status:15} | {str(message)[:30]:30} | {timestamp}")
 
 if __name__ == "__main__":
     view_all_messages()

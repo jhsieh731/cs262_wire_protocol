@@ -19,8 +19,12 @@ class ClientGUI:
 
         self.user_uuid = None
         self.selected_accounts = None
+        self.username = ""
         self.current_page = 0
-        self.accounts_per_page = 10
+        self.max_accounts_page = 0
+        self.num_messages = 10
+        self.num_undelivered = 0
+        self.msgid_map = {}  # Dictionary to map listbox indices to msgid
 
         self.login_frame = tk.Frame(master)
         self.chat_frame = tk.Frame(master)
@@ -83,6 +87,10 @@ class ClientGUI:
         self.search_button = tk.Button(self.accounts_frame, text="Search", command=self.search_accounts)
         self.search_button.pack(padx=10, pady=5)
 
+        # Delete Account Button
+        self.delete_account_button = tk.Button(self.accounts_frame, text="Delete My Account", command=self.confirm_delete_account)
+        self.delete_account_button.pack(padx=10, pady=5)
+
         self.accounts_listbox = tk.Listbox(self.accounts_frame)
         self.accounts_listbox.pack(padx=10, pady=5, fill=tk.BOTH, expand=True)
         self.accounts_listbox.bind('<<ListboxSelect>>', self.on_account_select)
@@ -102,8 +110,6 @@ class ClientGUI:
         self.messages_label = tk.Label(self.messages_frame, text="Messages")
         self.messages_label.pack(padx=10, pady=5)
 
-        self.read_button = tk.Button(self.messages_frame, text="Read", command=self.read_messages)
-        self.read_button.pack(padx=10, pady=5)
         self.delete_button = tk.Button(self.messages_frame, text="Delete", command=self.delete_messages)
         self.delete_button.pack(padx=10, pady=5)
 
@@ -112,11 +118,14 @@ class ClientGUI:
 
         self.num_messages_entry = tk.Entry(self.messages_frame)
         self.num_messages_entry.pack(padx=10, pady=5)
-        self.go_button = tk.Button(self.messages_frame, text="Go", command=self.load_messages)
+        self.go_button = tk.Button(self.messages_frame, text="See undelivered messages", command=self.load_undelivered_messages)
         self.go_button.pack(padx=10, pady=5)
 
         self.messages_listbox = tk.Listbox(self.messages_frame, selectmode=tk.MULTIPLE)
         self.messages_listbox.pack(padx=10, pady=5, fill=tk.BOTH, expand=True)
+
+        self.load_more_button = tk.Button(self.messages_frame, text="Load more", command=self.load_more_messages)
+        self.load_more_button.pack(padx=10, pady=5)
 
         # Third column: Message display and input
         self.message_display_frame = tk.Frame(self.chat_frame)
@@ -139,34 +148,40 @@ class ClientGUI:
         self.chat_frame.grid_rowconfigure(0, weight=1)
 
         # Load initial data
-        # self.load_accounts()
+        self.load_page_data()
+        # self.search_accounts()
+        # print("Loading messages")
         # self.load_messages()
+        # print("Messages loaded")
+
+
+    def load_page_data(self):
+        num_messages = self.num_messages
+        request = {
+            "protocol-type": "json",
+            "action": "load_page_data",
+            "content": {"uuid": self.user_uuid},
+        }
+        send_to_server(request)
 
     def search_accounts(self):
         search_term = self.search_bar.get()
         request = {
             "protocol-type": "json",
             "action": "search_accounts",
-            "content": {"search_term": search_term, "page": self.current_page, "per_page": self.accounts_per_page},
+            "content": {"search_term": search_term, "current_page": self.current_page},
         }
         send_to_server(request)
 
     def prev_page(self):
         if self.current_page > 0:
             self.current_page -= 1
-            self.load_accounts()
+            self.search_accounts()
 
     def next_page(self):
-        self.current_page += 1
-        self.load_accounts()
-
-    def load_accounts(self):
-        request = {
-            "protocol-type": "json",
-            "action": "load_accounts",
-            "content": {"page": self.current_page, "per_page": self.accounts_per_page},
-        }
-        send_to_server(request)
+        if self.current_page < self.max_accounts_page:
+            self.current_page += 1
+            self.search_accounts()
 
     def on_account_select(self, event):
         selection = event.widget.curselection()
@@ -181,53 +196,77 @@ class ClientGUI:
         self.message_display.insert(tk.END, f"Send message to {self.selected_account}\n")
         self.message_display.config(state=tk.DISABLED)
 
-    def read_messages(self):
-        selected_indices = self.messages_listbox.curselection()
-        selected_messages = [self.messages_listbox.get(i) for i in selected_indices]
-        request = {
-            "protocol-type": "json",
-            "action": "read_messages",
-            "content": {"messages": selected_messages},
-        }
-        send_to_server(request)
-
     def delete_messages(self):
         selected_indices = self.messages_listbox.curselection()
-        selected_messages = [self.messages_listbox.get(i) for i in selected_indices]
+        selected_msgids = [self.msgid_map[i] for i in selected_indices]
         request = {
             "protocol-type": "json",
             "action": "delete_messages",
-            "content": {"messages": selected_messages},
+            "content": {"msgids": selected_msgids},
         }
         send_to_server(request)
 
+    def load_undelivered_messages(self):
+        num_messages = int(self.num_messages_entry.get())
+        if num_messages < 1 or num_messages > int(self.num_undelivered):
+            return
+        request = {
+            "protocol-type": "json",
+            "action": "load_undelivered",
+            "content": {"num_messages": num_messages, "uuid": self.user_uuid},
+        }
+        send_to_server(request)
+
+    def load_more_messages(self):
+        self.num_messages += 10
+        self.load_messages()
+
     def load_messages(self):
-        num_messages = self.num_messages_entry.get()
+        num_messages = self.num_messages
+        print(f"Loading {num_messages} messages")
         request = {
             "protocol-type": "json",
             "action": "load_messages",
-            "content": {"num_messages": num_messages},
+            "content": {"num_messages": num_messages, "uuid": self.user_uuid},
         }
         send_to_server(request)
 
     def update_accounts_list(self, accounts):
         self.accounts_listbox.delete(0, tk.END)
         for account in accounts:
-            self.accounts_listbox.insert(tk.END, account)
+            # Display username in the listbox
+            self.accounts_listbox.insert(tk.END, account['username'])
 
-    def update_messages_list(self, messages):
-        self.messages_listbox.delete(0, tk.END)
-        for message in messages:
-            self.messages_listbox.insert(tk.END, message)
+    def update_messages_list(self, messages, total_undelivered):
+            print(f"Updating messages list with {len(messages)} messages")
+            self.messages_listbox.delete(0, tk.END)
+            self.msgid_map.clear()  # Clear the previous mapping
+            for index, message in enumerate(messages):
+                sender = message['sender_username']
+                recipient = message['recipient_username']
+                msg_content = message['message']
+                timestamp = message['timestamp']
+                msgid = message['msgid']
+                
+                if recipient == self.username:
+                    display_text = f"From {sender}: {msg_content}"
+                else:
+                    display_text = f"To {recipient}: {msg_content}"
+                
+                self.messages_listbox.insert(tk.END, display_text)
+                # Map the listbox index to the msgid
+                self.msgid_map[index] = msgid
+            self.undelivered_label.config(text=f"Undelivered messages: {total_undelivered}")
 
     def send_message(self):
             msg = self.entry.get()
             if msg and self.selected_account:
+                print(f"Selected account: {self.selected_account}, Message: {msg}")
                 self.entry.delete(0, tk.END)
                 request = {
                     "protocol-type": "json",
                     "action": "send_message",
-                    "content": {"recipient": self.selected_account, "message": msg},
+                    "content": {"sender_uuid": self.user_uuid, "recipient_username": self.selected_account, "message": msg},
                 }
                 send_to_server(request)
 
@@ -243,6 +282,7 @@ class ClientGUI:
             "action": "login_register",
             "content": {"username": username, "password": password},
         }
+        self.username = username
         if not self.is_threading:
             self.is_threading = True
             threading.Thread(target=lambda: network_thread(request), daemon=True).start()
@@ -250,18 +290,141 @@ class ClientGUI:
             send_to_server(request)
 
 
+    def confirm_delete_account(self):
+        # Create a dialog window
+        dialog = tk.Toplevel(self.master)
+        dialog.title("Confirm Account Deletion")
+        dialog.geometry("300x250")  # Increased height
+        dialog.transient(self.master)  # Make dialog modal
+        dialog.grab_set()  # Make the dialog modal
+
+        # Add warning message
+        warning_label = tk.Label(dialog, text="Are you sure you want to delete your account?\nThis action cannot be undone.", wraplength=250)
+        warning_label.pack(padx=10, pady=10)
+
+        # Password entry
+        password_label = tk.Label(dialog, text="Enter your password to confirm:")
+        password_label.pack(padx=10, pady=5)
+        password_entry = tk.Entry(dialog, show="*")
+        password_entry.pack(padx=10, pady=5)
+
+        def delete_account():
+            password = password_entry.get()
+            request = {
+                "action": "delete_account",
+                "content": {
+                    "uuid": self.user_uuid,
+                    "password": password
+                }
+            }
+            send_to_server(request)
+            dialog.destroy()
+            # After server confirms deletion, return to login page
+            self.clear_frame(self.chat_frame)
+            self.create_login_page()
+
+        # Buttons
+        delete_button = tk.Button(dialog, text="Delete Account", command=delete_account, fg="red")
+        delete_button.pack(pady=10)
+        
+        cancel_button = tk.Button(dialog, text="Cancel", command=dialog.destroy)
+        cancel_button.pack(pady=5)
+
     def handle_server_response(self, response):
         response_type = response["response_type"]
         print(f"Action: {response_type}, Response: {response}")
-        if response_type == "login_register":
+        
+        if response_type == "delete_account":
+            if response["status"] != "success":
+                messagebox.showerror("Error", response["message"])
+
+        elif response_type == "login_register":
             self.user_uuid = response.get("uuid", None)
             self.create_chat_page()
-        elif response_type == "check_username":
-            # Handle check username response
-            pass
+
+        elif response_type == "load_page_data":
+            accounts = response.get("accounts", [])
+            messages = response.get("messages", [])
+            total_undelivered = response.get("num_pending", 0)
+            total_count = response.get("total_count", 0)
+            
+            self.num_messages = len(messages)
+            self.num_undelivered = total_undelivered
+            print(f"Received {len(accounts)} accounts and {len(messages)} messages")
+            
+            # Update pagination state. Start index from 0
+            self.max_accounts_page = (total_count // 10) - 1
+            
+            # Enable/disable pagination buttons
+            self.prev_button["state"] = tk.NORMAL if self.current_page > 0 else tk.DISABLED
+            self.next_button["state"] = tk.NORMAL if self.current_page < self.max_accounts_page else tk.DISABLED
+
+
+            self.update_accounts_list(accounts)
+            self.update_messages_list(messages, total_undelivered)
+
+        elif response_type == "search_accounts":
+            accounts = response.get("accounts", [])
+            total_count = response.get("total_count", 0)
+            print(f"Received {len(accounts)} accounts (total: {total_count})")
+            
+            # Update the accounts list
+            self.update_accounts_list(accounts)
+            
+            # Update pagination state. Start index from 0
+            self.max_accounts_page = (total_count // 10) - 1
+            
+            # Enable/disable pagination buttons
+            self.prev_button["state"] = tk.NORMAL if self.current_page > 0 else tk.DISABLED
+            self.next_button["state"] = tk.NORMAL if self.current_page < self.max_accounts_page else tk.DISABLED
+            
+        elif response_type == "receive_message":            
+            sender = response.get("sender_username", "Unknown")
+            message = response.get("message", "")
+            print(f"Received message from {sender}: {message}")
+            self.message_display.config(state=tk.NORMAL)
+            self.message_display.insert(tk.END, f"{sender}: {message}\n")
+            self.message_display.config(state=tk.DISABLED)
+            self.num_messages += 1
+
+            # update the messagelist box
+            self.load_messages()
+        
+        elif response_type == "send_message":
+            print("send message status", response.get("status", "error"))
+            success = response.get("success", "error")
+            if success:
+                print("Message sent successfully")
+                self.num_messages += 1
+                self.load_messages()
+
+        elif response_type == "delete_messages":
+            status = response.get("status", "error")
+            if status == "success":
+                print("Messages deleted successfully")
+                num_deleted = response.get("num_deleted", 0)
+                self.num_messages -= num_deleted
+                self.load_messages()
+        
+        elif response_type == "load_messages":
+            messages = response.get("messages", [])
+            total_undelivered = response.get("total_undelivered", 0)
+            self.num_messages = len(messages)
+            self.num_undelivered = total_undelivered
+            print(f"Received {len(messages)} messages")
+            self.update_messages_list(messages, total_undelivered)
+
+        elif response_type == "load_undelivered":
+            messages = response.get("messages", [])
+            self.num_undelivered -= len(messages)
+            self.num_messages += len(messages)
+            print(f"Received {len(messages)} undelivered messages")
+            self.load_messages()
+        
         elif response_type == "error": # Handle error response
             print("Error: ", response.get("response", "An error occurred"))
             self.create_error_page(response.get("response", "An error occurred"))
+
 
 
 
@@ -305,17 +468,17 @@ def network_thread(request):
         print("selectors closed")
         sel.close()
 
+
 # Send message to the server
 def send_to_server(request):
-    for key in list(sel.get_map().values()):
+     for key in list(sel.get_map().values()):
         msg_obj = key.data  # This is the Message instance
         
         # Set the request and queue it
         msg_obj.request = request
-        msg_obj._request_queued = False  # Ensure we can queue the new message
         msg_obj.queue_request()          # Queue the message for sending
         
-        # Set selector to listen for write events
+        # # Set selector to listen for write events
         msg_obj._set_selector_events_mask("w")
 
 

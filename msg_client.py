@@ -50,15 +50,17 @@ class Message:
             print(f"Sending {self._send_buffer!r} to {self.addr}")
             try:
                 # Should be ready to write
-                print(52)
                 sent = self.sock.send(self._send_buffer)
             except BlockingIOError:
                 # Resource temporarily unavailable (errno EWOULDBLOCK)
-                print("55 BlockingIOError")
                 pass
             else:
-                print(58)
                 self._send_buffer = self._send_buffer[sent:]
+                if sent and not self._send_buffer:
+                    self._jsonheader_len = None
+                    self.jsonheader = None
+                    self.request = None
+                    self.response_created = False
 
     # TODO: add fns for custom protocol
     def _json_encode(self, obj, encoding):
@@ -102,6 +104,7 @@ class Message:
     def read(self):
         self._read()
         print(f"Read data from {self.addr}: {self._recv_buffer!r}")
+        print(self._jsonheader_len is None)
 
         if self._jsonheader_len is None:
             self.process_protoheader()
@@ -148,6 +151,9 @@ class Message:
     # TODO: change/add custom protocol
     def queue_request(self):
         print("queue_request")
+        # Reset state before queuing a new request
+        self.reset_state()
+        
         content = self._json_encode(self.request["content"], "utf-8")
         action = self.request["action"]
         req = {
@@ -155,28 +161,16 @@ class Message:
             "action": action,
             "content_length": len(content),
         }
-        # content_type = self.request["type"]
-        # content_encoding = self.request["encoding"]
-        # if content_type == "text/json":
-        #     req = {
-        #         "content_bytes": self._json_encode(content, content_encoding),
-        #         "content_type": content_type,
-        #         "content_encoding": content_encoding,
-        #     }
-        # else:
-        #     req = {
-        #         "content_bytes": content,
-        #         "content_type": content_type,
-        #         "content_encoding": content_encoding,
-        #     }
         print(f"Request: {req!r}")
         message = self._create_message(**req)
         self._send_buffer += message
         self._request_queued = True
 
     def process_protoheader(self):
+        print("process_protoheader")
         hdrlen = 2 # fixed length
         if len(self._recv_buffer) >= hdrlen:
+            print("len of buffer: ", len(self._recv_buffer))
             self._jsonheader_len = struct.unpack(
                 ">H", self._recv_buffer[:hdrlen]
             )[0]
@@ -198,6 +192,14 @@ class Message:
                 if reqhdr not in self.jsonheader:
                     raise ValueError(f"Missing required header '{reqhdr}'.")
 
+    def reset_state(self):
+        """Reset the message state to handle new requests/responses"""
+        print("Resetting message state")
+        self._jsonheader_len = None
+        self.jsonheader = None
+        self.response = None
+        self._recv_buffer = b""
+
     def process_response(self):
         content_len = self.jsonheader["content-length"]
         print(f"len of buffer: {len(self._recv_buffer)}; Content length: {content_len}")
@@ -206,8 +208,16 @@ class Message:
         data = self._recv_buffer[:content_len]
         print(f"Response content: {data!r}")
         self._recv_buffer = self._recv_buffer[content_len:]
-        self.response = self._json_decode(data, "utf-8")
-        print(f"Received response {self.response!r} from {self.addr}")
-        self.gui.handle_server_response(self.response)
+        
+        try:
+            decoded_response = self._json_decode(data, "utf-8")
+            print(f"Decoded response: {decoded_response}")
+            self.response = decoded_response
+            self.gui.handle_server_response(decoded_response)
+            # Reset state after successfully processing the response
+            self.reset_state()
+        except Exception as e:
+            print(f"Error decoding response: {e}")
+            print(f"Raw data: {data}")
 
         

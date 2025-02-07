@@ -33,13 +33,13 @@ class MessageDatabase:
         create_messages_sql = """
         CREATE TABLE messages (
             msgid INTEGER PRIMARY KEY AUTOINCREMENT,
-            senderid INTEGER NOT NULL,
-            recipientid INTEGER NOT NULL,
+            senderuuid INTEGER NOT NULL,
+            recipientuuid INTEGER NOT NULL,
             message TEXT NOT NULL,
             status TEXT CHECK(status IN ('pending', 'delivered', 'seen')) DEFAULT 'pending',
             timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (senderid) REFERENCES users(userid),
-            FOREIGN KEY (recipientid) REFERENCES users(userid)
+            FOREIGN KEY (senderuuid) REFERENCES users(userid),
+            FOREIGN KEY (recipientuuid) REFERENCES users(userid)
         );
         """
         try:
@@ -90,7 +90,6 @@ class MessageDatabase:
                 new_user = cursor.fetchone()
                 if new_user:
                     return [dict(new_user)]
-            
             return []
         except sqlite3.Error as e:
             print(f"Error in login_or_create_account: {e}")
@@ -131,17 +130,36 @@ class MessageDatabase:
             if conn:
                 conn.close()
 
-    def get_messages(self, user_id: str) -> List[Tuple]:
-        """Retrieve all messages for a specific user (as sender or receiver)."""
-        sql = """SELECT sender_id, receiver_id, content, timestamp 
-                FROM messages 
-                WHERE sender_id = ? OR receiver_id = ?
-                ORDER BY timestamp DESC;"""
+    def get_messages(self, sender_uuid: str, receiver_uuid: str) -> List[Tuple]:
+        """Retrieve messages based on sender and receiver UUIDs.
+        Empty strings for either UUID will match all values for that field."""
         try:
             conn = self.connect()
             cursor = conn.cursor()
-            cursor.execute(sql, (user_id, user_id))
+            
+            # Build the WHERE clause based on which UUIDs are provided
+            conditions = []
+            params = []
+            
+            if sender_uuid:
+                conditions.append("senderuuid = ?")
+                params.append(sender_uuid)
+            if receiver_uuid:
+                conditions.append("recipientuuid = ?")
+                params.append(receiver_uuid)
+            
+            # If no conditions, return all messages
+            where_clause = " AND ".join(conditions) if conditions else "1=1"
+            
+            sql = f"""SELECT senderuuid, recipientuuid, message, status, timestamp 
+                    FROM messages 
+                    WHERE {where_clause}
+                    ORDER BY timestamp DESC;"""
+            
+            print(f"Executing query: {sql} with params: {params}")
+            cursor.execute(sql, params)
             return cursor.fetchall()
+            
         except sqlite3.Error as e:
             print(f"Error retrieving messages: {e}")
             return []
@@ -149,16 +167,381 @@ class MessageDatabase:
             if conn:
                 conn.close()
 
-    def clear_all_messages(self):
-        """Clear all messages from the database. Use with caution!"""
-        sql = "DELETE FROM messages;"
+                
+    def get_user_uuid(self, username: str) -> tuple[bool, str, str]:
+        """
+        Get a user's UUID by their username.
+        Returns (success, error_message, uuid)
+        """
         try:
             conn = self.connect()
+            if conn is None:
+                return False, "Database connection failed", ""
+
             cursor = conn.cursor()
-            cursor.execute(sql)
-            conn.commit()
+            cursor.execute("SELECT userid FROM users WHERE username = ?", (username,))
+            user = cursor.fetchone()
+            
+            if not user:
+                return False, f"User {username} not found", ""
+                
+            return True, "", str(user[0])
+            
         except sqlite3.Error as e:
-            print(f"Error clearing messages: {e}")
+            print(f"Error getting user UUID: {e}")
+            return False, str(e), ""
+        finally:
+            if conn:
+                conn.close()
+
+    def get_associated_socket(self, user_uuid: str) -> str:
+        """
+        Get the associated socket for a user by their UUID.
+        Returns the socket string if found, empty string if not found or error.
+        """
+        try:
+            conn = self.connect()
+            if conn is None:
+                return ""
+
+            cursor = conn.cursor()
+            cursor.execute("SELECT associated_socket FROM users WHERE userid = ?", (user_uuid,))
+            result = cursor.fetchone()
+            
+            if result and result[0]:
+                return result[0]
+            return ""
+            
+        except sqlite3.Error as e:
+            print(f"Error getting associated socket: {e}")
+            return ""
+        finally:
+            if conn:
+                conn.close()
+
+    def store_message(self, sender_uuid: str, recipient_uuid: str, message_text: str, status: bool) -> tuple[bool, str]:
+        """
+        Store a message in the database.
+        Returns (success, error_message)
+        """
+        try:
+            conn = self.connect()
+            if conn is None:
+                return False, "Database connection failed"
+
+            cursor = conn.cursor()
+            
+            # Set message status based on recipient's socket status
+            status = "delivered" if status else "pending"
+            
+            # Insert the message using UUIDs directly
+            cursor.execute("""
+                INSERT INTO messages (senderuuid, recipientuuid, message, status)
+                VALUES (?, ?, ?, ?)
+            """, (sender_uuid, recipient_uuid, message_text, status))
+            
+            conn.commit()
+            return True, ""
+            
+        except sqlite3.Error as e:
+            print(f"Error storing message: {e}")
+            return False, str(e)
+        finally:
+            if conn:
+                conn.close()
+
+    def search_accounts(self, search_term: str, current_page: int = 0, accounts_per_page: int = 10) -> tuple[list[dict], int]:
+        """
+        Search for user accounts with pagination.
+        Returns (list of user dictionaries, total count of matching users)
+        """
+        try:
+            print(f"\nSearching for term: '{search_term}' (page {current_page}, per_page {accounts_per_page})")
+            conn = self.connect()
+            if conn is None:
+                print("Database connection failed")
+                return [], 0
+                
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            
+            # First get total count
+            if search_term == "":
+                count_sql = "SELECT COUNT(*) as total FROM users"
+                cursor.execute(count_sql)
+            else:
+                count_sql = "SELECT COUNT(*) as total FROM users WHERE username LIKE ? || '%'"
+                cursor.execute(count_sql, (search_term,))
+            
+            total_count = cursor.fetchone()["total"]
+            print(f"Total matching users: {total_count}")
+            
+            # Calculate offset
+            offset = current_page * accounts_per_page
+            
+            # Get paginated results
+            if search_term == "":
+                search_sql = """
+                    SELECT userid, username 
+                    FROM users 
+                    ORDER BY username ASC
+                    LIMIT ? OFFSET ?
+                """
+                print(f"\nExecuting SQL to get users (limit {accounts_per_page}, offset {offset})")
+                cursor.execute(search_sql, (accounts_per_page, offset))
+            else:
+                search_sql = """
+                    SELECT userid, username 
+                    FROM users 
+                    WHERE username LIKE ? || '%'
+                    ORDER BY username ASC
+                    LIMIT ? OFFSET ?
+                """
+                print(f"\nExecuting SQL to search for '{search_term}'")
+                cursor.execute(search_sql, (search_term, accounts_per_page, offset))
+            
+            results = [dict(row) for row in cursor.fetchall()]
+            print(f"\nQuery results: {results}")
+            return results, total_count
+            
+        except sqlite3.Error as e:
+            print(f"Error searching accounts: {e}")
+            return [], 0
+        finally:
+            if conn:
+                conn.close()
+
+    def get_user_password(self, uuid: int) -> str:
+        """Get a user's password by their UUID.
+        
+        Args:
+            uuid (int): The user's UUID
+            
+        Returns:
+            str: The user's password if found, None otherwise
+        """
+        try:
+            conn = self.connect()
+            if conn is None:
+                return None
+
+            cursor = conn.cursor()
+            cursor.execute("SELECT hashed_password FROM users WHERE userid = ?", (uuid,))
+            result = cursor.fetchone()
+            return result[0] if result else None
+            
+        except sqlite3.Error as e:
+            print(f"Error getting user password: {e}")
+            return None
+        finally:
+            if conn:
+                conn.close()
+                
+    def delete_user(self, uuid: int) -> bool:
+        """Delete a user by their UUID.
+        
+        Args:
+            uuid (int): The user's UUID
+            
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        try:
+            conn = self.connect()
+            if conn is None:
+                print("Failed to connect to database in delete_user")
+                return False
+
+            cursor = conn.cursor()
+            print(f"Attempting to delete user with UUID: {uuid}")
+            
+            # First check if user exists
+            cursor.execute("SELECT userid FROM users WHERE userid = ?", (uuid,))
+            user = cursor.fetchone()
+            if not user:
+                print(f"No user found with UUID: {uuid}")
+                return False
+                
+            # Delete the user
+            cursor.execute("DELETE FROM users WHERE userid = ?", (uuid,))
+            conn.commit()
+            
+            # Verify deletion
+            cursor.execute("SELECT userid FROM users WHERE userid = ?", (uuid,))
+            if cursor.fetchone() is None:
+                print(f"Successfully deleted user with UUID: {uuid}")
+                return True
+            else:
+                print(f"Failed to delete user with UUID: {uuid} - user still exists")
+                return False
+            
+        except sqlite3.Error as e:
+            print(f"Error deleting user: {e}")
+            return False
+        finally:
+            if conn:
+                conn.close()
+
+    def get_user_username(self, uuid: int) -> dict:
+        """Get a user's information by their UUID.
+        
+        Args:
+            uuid (int): The user's UUID
+            
+        Returns:
+            dict: The user's information if found, empty dict otherwise
+        """
+        print(f"Getting user info for UUID: {uuid}")
+        try:
+            conn = self.connect()
+            if conn is None:
+                return {}
+
+            cursor = conn.cursor()
+            cursor.execute("SELECT username FROM users WHERE userid = ?", (uuid,))
+            user = cursor.fetchone()
+            print(416, user)
+            return user[0] if user else None
+            
+        except sqlite3.Error as e:
+            print(f"Error getting user info: {e}")
+            return {}
+        finally:
+            if conn:
+                conn.close()
+                
+    def load_messages(self, user_uuid, num_messages):
+        """Load the most recent messages for a user."""
+        try:
+            conn = self.connect()
+            if conn is None:
+                return []
+
+            delivered_sql = """
+                SELECT DISTINCT 
+                    m.msgid,
+                    sender.username AS sender_username, 
+                    recipient.username AS recipient_username, 
+                    m.message, 
+                    m.timestamp
+                FROM 
+                    messages m
+                JOIN 
+                    users sender ON m.senderuuid = sender.userid
+                JOIN 
+                    users recipient ON m.recipientuuid = recipient.userid
+                WHERE 
+                    (m.status = 'delivered' AND m.recipientuuid = ?)
+                    OR (m.senderuuid = ? AND (m.status = 'delivered' OR m.status = 'pending'))
+                ORDER BY 
+                    m.timestamp DESC
+                LIMIT ?;
+            """
+
+            pending_sql = """
+                SELECT 
+                    COUNT(*)
+                FROM 
+                    messages
+                WHERE 
+                    status = 'pending' 
+                    AND (recipientuuid = ?);
+            """
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute(delivered_sql, (user_uuid, user_uuid, num_messages))
+            messages = cursor.fetchall()
+            print("messages: ", messages)
+            cursor.execute(pending_sql, (user_uuid,))
+            pending = cursor.fetchone()[0]
+            print("pending: ", pending)
+            return [dict(message) for message in messages], pending
+            
+        except sqlite3.Error as e:
+            print(f"Error loading messages: {e}")
+            return []
+        finally:
+            if conn:
+                conn.close()
+
+    def load_page_data(self, user_uuid):
+        messages, num_pending = self.load_messages(user_uuid, 10)
+        accounts, total_count = self.search_accounts("", 0, 10)
+        return messages, num_pending, accounts, total_count
+
+
+    def delete_messages(self, msg_ids):
+        """Delete messages by their IDs."""
+        try:
+            conn = self.connect()
+            if conn is None:
+                return False
+
+            print("MESSAGE IDS:", msg_ids)
+            cursor = conn.cursor()
+            for msg_id in msg_ids:
+                cursor.execute("DELETE FROM messages WHERE msgid = ?", (msg_id,))
+                print(f"Deleted message: {msg_id}")
+            conn.commit()
+            print(f"Deleted messages: {msg_ids}")
+
+            # verify deletion
+            cursor.execute("SELECT msgid FROM messages WHERE msgid IN ({})".format(",".join("?" * len(msg_ids))), msg_ids)
+            if cursor.fetchone() is None:
+                print(f"Successfully deleted messages: {msg_ids}")
+                return True
+            else:
+                print(f"Failed to delete messages: {msg_ids}")
+                return False
+            
+        except sqlite3.Error as e:
+            print(f"Error deleting messages: {e}")
+            return False
+        finally:
+            if conn:
+                conn.close()
+
+    def load_undelivered(self, user_uuid, num_messages):
+        """Load the most recent undelivered messages for a user."""
+        try:
+            conn = self.connect()
+            if conn is None:
+                return []
+
+            sql = """
+                SELECT 
+                    m.msgid,
+                    sender.username AS sender_username, 
+                    recipient.username AS recipient_username, 
+                    m.message, 
+                    m.timestamp
+                FROM 
+                    messages m
+                JOIN 
+                    users sender ON m.senderuuid = sender.userid
+                JOIN 
+                    users recipient ON m.recipientuuid = recipient.userid
+                WHERE 
+                    m.status = 'pending' 
+                    AND m.recipientuuid = ?
+                ORDER BY 
+                    m.timestamp DESC
+                LIMIT ?;
+            """
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute(sql, (user_uuid, num_messages))
+            messages = cursor.fetchall()
+
+            # update status to delivered for these messages
+            msg_ids = [msg["msgid"] for msg in messages]
+            cursor.execute("UPDATE messages SET status = 'delivered' WHERE msgid IN ({})".format(",".join("?" * len(msg_ids))), msg_ids)
+            conn.commit()
+            return [dict(message) for message in messages]
+            
+        except sqlite3.Error as e:
+            print(f"Error loading undelivered messages: {e}")
+            return []
         finally:
             if conn:
                 conn.close()
