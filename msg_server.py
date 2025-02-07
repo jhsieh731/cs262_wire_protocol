@@ -212,7 +212,34 @@ class Message:
         elif self.jsonheader["action"] == "delete_messages":
             pass
         elif self.jsonheader["action"] == "delete_account":
-            pass
+            request_content = self._json_decode(self.request, "utf-8")
+            user_uuid = request_content.get("uuid")
+            password = request_content.get("password")
+            
+            # Get the stored password from database
+            stored_password = db.get_user_password(user_uuid)
+            print(f"Retrieved stored password: {'Found' if stored_password else 'Not found'}")
+            
+            if stored_password and stored_password == password:
+                # Password matches, delete the account
+                if db.delete_user(user_uuid):
+                    response_content = {
+                        "response_type": "delete_account",
+                        "status": "success",
+                        "message": "Account successfully deleted"
+                    }
+                else:
+                    response_content = {
+                        "response_type": "delete_account",
+                        "status": "error",
+                        "message": "Failed to delete account"
+                    }
+            else:
+                response_content = {
+                    "response_type": "delete_account",
+                    "status": "error",
+                    "message": "Incorrect password"
+                }
         else:
             response_content = {
                 "content": request_content,

@@ -84,6 +84,10 @@ class ClientGUI:
         self.search_button = tk.Button(self.accounts_frame, text="Search", command=self.search_accounts)
         self.search_button.pack(padx=10, pady=5)
 
+        # Delete Account Button
+        self.delete_account_button = tk.Button(self.accounts_frame, text="Delete My Account", command=self.confirm_delete_account)
+        self.delete_account_button.pack(padx=10, pady=5)
+
         self.accounts_listbox = tk.Listbox(self.accounts_frame)
         self.accounts_listbox.pack(padx=10, pady=5, fill=tk.BOTH, expand=True)
         self.accounts_listbox.bind('<<ListboxSelect>>', self.on_account_select)
@@ -246,9 +250,53 @@ class ClientGUI:
             send_to_server(request)
 
 
+    def confirm_delete_account(self):
+        # Create a dialog window
+        dialog = tk.Toplevel(self.master)
+        dialog.title("Confirm Account Deletion")
+        dialog.geometry("300x250")  # Increased height
+        dialog.transient(self.master)  # Make dialog modal
+        dialog.grab_set()  # Make the dialog modal
+
+        # Add warning message
+        warning_label = tk.Label(dialog, text="Are you sure you want to delete your account?\nThis action cannot be undone.", wraplength=250)
+        warning_label.pack(padx=10, pady=10)
+
+        # Password entry
+        password_label = tk.Label(dialog, text="Enter your password to confirm:")
+        password_label.pack(padx=10, pady=5)
+        password_entry = tk.Entry(dialog, show="*")
+        password_entry.pack(padx=10, pady=5)
+
+        def delete_account():
+            password = password_entry.get()
+            request = {
+                "action": "delete_account",
+                "content": {
+                    "uuid": self.user_uuid,
+                    "password": password
+                }
+            }
+            send_to_server(request)
+            dialog.destroy()
+            # After server confirms deletion, return to login page
+            self.clear_frame(self.chat_frame)
+            self.create_login_page()
+
+        # Buttons
+        delete_button = tk.Button(dialog, text="Delete Account", command=delete_account, fg="red")
+        delete_button.pack(pady=10)
+        
+        cancel_button = tk.Button(dialog, text="Cancel", command=dialog.destroy)
+        cancel_button.pack(pady=5)
+
     def handle_server_response(self, response):
         response_type = response["response_type"]
         print(f"Action: {response_type}, Response: {response}")
+        
+        if response_type == "delete_account":
+            if response["status"] != "success":
+                messagebox.showerror("Error", response["message"])
         if response_type == "login_register":
             self.user_uuid = response.get("uuid", None)
             self.create_chat_page()

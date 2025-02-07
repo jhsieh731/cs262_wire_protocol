@@ -90,7 +90,7 @@ class MessageDatabase:
                 new_user = cursor.fetchone()
                 if new_user:
                     return [dict(new_user)]
-            
+
             return []
         except sqlite3.Error as e:
             print(f"Error in login_or_create_account: {e}")
@@ -324,6 +324,77 @@ class MessageDatabase:
         except sqlite3.Error as e:
             print(f"Error searching accounts: {e}")
             return [], 0
+        finally:
+            if conn:
+                conn.close()
+
+    def get_user_password(self, uuid: int) -> str:
+        """Get a user's password by their UUID.
+        
+        Args:
+            uuid (int): The user's UUID
+            
+        Returns:
+            str: The user's password if found, None otherwise
+        """
+        try:
+            conn = self.connect()
+            if conn is None:
+                return None
+
+            cursor = conn.cursor()
+            cursor.execute("SELECT hashed_password FROM users WHERE userid = ?", (uuid,))
+            result = cursor.fetchone()
+            return result[0] if result else None
+            
+        except sqlite3.Error as e:
+            print(f"Error getting user password: {e}")
+            return None
+        finally:
+            if conn:
+                conn.close()
+                
+    def delete_user(self, uuid: int) -> bool:
+        """Delete a user by their UUID.
+        
+        Args:
+            uuid (int): The user's UUID
+            
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        try:
+            conn = self.connect()
+            if conn is None:
+                print("Failed to connect to database in delete_user")
+                return False
+
+            cursor = conn.cursor()
+            print(f"Attempting to delete user with UUID: {uuid}")
+            
+            # First check if user exists
+            cursor.execute("SELECT userid FROM users WHERE userid = ?", (uuid,))
+            user = cursor.fetchone()
+            if not user:
+                print(f"No user found with UUID: {uuid}")
+                return False
+                
+            # Delete the user
+            cursor.execute("DELETE FROM users WHERE userid = ?", (uuid,))
+            conn.commit()
+            
+            # Verify deletion
+            cursor.execute("SELECT userid FROM users WHERE userid = ?", (uuid,))
+            if cursor.fetchone() is None:
+                print(f"Successfully deleted user with UUID: {uuid}")
+                return True
+            else:
+                print(f"Failed to delete user with UUID: {uuid} - user still exists")
+                return False
+            
+        except sqlite3.Error as e:
+            print(f"Error deleting user: {e}")
+            return False
         finally:
             if conn:
                 conn.close()
