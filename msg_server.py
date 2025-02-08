@@ -180,13 +180,14 @@ class Message:
             print("Send message request:", request_content)
             
             # Extract message details
-            sender_uuid = request_content.get("sender_uuid")
+            sender_uuid = request_content.get("uuid")
             recipient_username = request_content.get("recipient_username")
             message_text = request_content.get("message")
+            timestamp = request_content.get("timestamp")
 
-            print("message details: ", sender_uuid, recipient_username, message_text)
+            print("message details: ", sender_uuid, recipient_username, message_text, timestamp)
             
-            if not all([sender_uuid, recipient_username, message_text]):
+            if not all([sender_uuid, recipient_username, message_text, timestamp]):
                 response_content = {
                     "success": False,
                     "error": "Missing required fields",
@@ -245,7 +246,7 @@ class Message:
                             print(f"Error relaying message: {e}")
 
                     # Store the message
-                    success, error = db.store_message(sender_uuid, recipient_uuid, message_text, status)
+                    success, error = db.store_message(sender_uuid, recipient_uuid, message_text, status, timestamp)
                     
                     # Create response for sender
                     response_content = {
@@ -274,13 +275,11 @@ class Message:
         elif self.jsonheader["action"] == "delete_messages":
             print("Deleting messages")
             msg_ids = request_content.get("msgids", [])
-            db.delete_messages(msg_ids)
+            num_deleted = db.delete_messages(msg_ids)
             print(f"db delete_messages ran")
             response_content = {
                 "response_type": "delete_messages",
-                "status": "success",
-                "num_deleted": len(msg_ids),
-                "message": "Messages successfully deleted"
+                "num_deleted": num_deleted,
             }
         elif self.jsonheader["action"] == "delete_account":
             request_content = self._json_decode(self.request, "utf-8")
@@ -296,20 +295,20 @@ class Message:
                 if db.delete_user(user_uuid):
                     response_content = {
                         "response_type": "delete_account",
-                        "status": "success",
-                        "message": "Account successfully deleted"
+                        "success": True,
+                        "error": "",
                     }
                 else:
                     response_content = {
                         "response_type": "delete_account",
-                        "status": "error",
-                        "message": "Failed to delete account"
+                        "success": False,
+                        "error":  "Failed to delete account",
                     }
             else:
                 response_content = {
                     "response_type": "delete_account",
-                    "status": "error",
-                    "message": "Incorrect password"
+                    "success": False,
+                    "error": "Incorrect password",
                 }
         else:
             response_content = {

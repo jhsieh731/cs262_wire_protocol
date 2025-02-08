@@ -79,6 +79,7 @@ class Message:
     ):
         # TODO: rethink header
         jsonheader = {
+            "version": 1,
             "content-length": content_length,
             "action": action,
         }

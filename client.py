@@ -3,8 +3,11 @@ import socket
 import selectors
 import threading
 import tkinter as tk
+import datetime
+import hashlib
 from tkinter import scrolledtext
 import msg_client
+
 
 
 # Networking Setup
@@ -149,16 +152,16 @@ class ClientGUI:
 
         # Load initial data
         self.load_page_data()
-        # self.search_accounts()
-        # print("Loading messages")
-        # self.load_messages()
-        # print("Messages loaded")
 
 
+    def hash_password(self, password):
+        """Hashes a password using SHA-256."""
+        password_bytes = password.encode('utf-8')
+        sha_hash = hashlib.sha256(password_bytes)
+        return sha_hash.hexdigest()
+    
     def load_page_data(self):
-        num_messages = self.num_messages
         request = {
-            "protocol-type": "json",
             "action": "load_page_data",
             "content": {"uuid": self.user_uuid},
         }
@@ -167,7 +170,6 @@ class ClientGUI:
     def search_accounts(self):
         search_term = self.search_bar.get()
         request = {
-            "protocol-type": "json",
             "action": "search_accounts",
             "content": {"search_term": search_term, "current_page": self.current_page},
         }
@@ -200,7 +202,6 @@ class ClientGUI:
         selected_indices = self.messages_listbox.curselection()
         selected_msgids = [self.msgid_map[i] for i in selected_indices]
         request = {
-            "protocol-type": "json",
             "action": "delete_messages",
             "content": {"msgids": selected_msgids},
         }
@@ -211,7 +212,6 @@ class ClientGUI:
         if num_messages < 1 or num_messages > int(self.num_undelivered):
             return
         request = {
-            "protocol-type": "json",
             "action": "load_undelivered",
             "content": {"num_messages": num_messages, "uuid": self.user_uuid},
         }
@@ -225,7 +225,6 @@ class ClientGUI:
         num_messages = self.num_messages
         print(f"Loading {num_messages} messages")
         request = {
-            "protocol-type": "json",
             "action": "load_messages",
             "content": {"num_messages": num_messages, "uuid": self.user_uuid},
         }
@@ -264,9 +263,8 @@ class ClientGUI:
                 print(f"Selected account: {self.selected_account}, Message: {msg}")
                 self.entry.delete(0, tk.END)
                 request = {
-                    "protocol-type": "json",
                     "action": "send_message",
-                    "content": {"sender_uuid": self.user_uuid, "recipient_username": self.selected_account, "message": msg},
+                    "content": {"uuid": self.user_uuid, "recipient_username": self.selected_account, "message": msg, "timestamp": datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')},
                 }
                 send_to_server(request)
 
@@ -278,9 +276,8 @@ class ClientGUI:
 
     def send_login_register_request(self, username, password):
         request = {
-            "protocol-type": "json",
             "action": "login_register",
-            "content": {"username": username, "password": password},
+            "content": {"username": username, "password": self.hash_password(password)},
         }
         self.username = username
         if not self.is_threading:
@@ -314,7 +311,7 @@ class ClientGUI:
                 "action": "delete_account",
                 "content": {
                     "uuid": self.user_uuid,
-                    "password": password
+                    "password": self.hash_password(password),
                 }
             }
             send_to_server(request)
@@ -335,8 +332,8 @@ class ClientGUI:
         print(f"Action: {response_type}, Response: {response}")
         
         if response_type == "delete_account":
-            if response["status"] != "success":
-                messagebox.showerror("Error", response["message"])
+            if not response["success"]:
+                messagebox.showerror("Error", response["error"])
 
         elif response_type == "login_register":
             self.user_uuid = response.get("uuid", None)
@@ -399,12 +396,10 @@ class ClientGUI:
                 self.load_messages()
 
         elif response_type == "delete_messages":
-            status = response.get("status", "error")
-            if status == "success":
-                print("Messages deleted successfully")
-                num_deleted = response.get("num_deleted", 0)
-                self.num_messages -= num_deleted
-                self.load_messages()
+            print("Messages deleted successfully")
+            num_deleted = response.get("num_deleted", 0)
+            self.num_messages -= num_deleted
+            self.load_messages()
         
         elif response_type == "load_messages":
             messages = response.get("messages", [])

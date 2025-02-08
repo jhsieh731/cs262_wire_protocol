@@ -43,3 +43,40 @@ Header:
 2/4/25: Rewrote client Message class to use the wire protocol outlined above (JSON format), still need to keep the socket open so that Messages can be edited & sent over the same socket as long as the user is logged in. Maybe we should not call it a Message, since it persists?
 
 2/5/25: Added UI interface to create account/login. Would love to add a temporary dictionary storing mappings to active soccets/userids, but need to somehow bypass my message object
+
+
+jsonheader: 
+"version"
+"content-length"
+"action"
+
+actions: 
+"load_page_data"
+"search_accounts"
+"delete_messages"
+"load_undelivered"
+"load_messages"
+"send_message"
+"login_register"
+"delete_account"
+
+
+content:
+"uuid"
+"search_term"
+"current_page"
+"msgids"
+"num_messages"
+"sender_uuid"
+"recipient_username"
+"message"
+"timestamp"
+"username"
+"password"
+
+todo:
+- serializing/deserializing maybe?
+
+done:
+- cleaning up msg_server response_content
+- fix login password hash
