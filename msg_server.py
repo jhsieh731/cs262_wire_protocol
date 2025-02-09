@@ -112,7 +112,8 @@ class Message:
             request_content = self.custom_protocol.deserialize(self.request)
             computed_checksum = self.custom_protocol.compute_checksum(self.request)
             if computed_checksum != self.header.get("checksum", None):
-                raise ValueError("Checksum mismatch")
+                self.header["action"] = "error"
+
         response_content = {}
         print("action: ", self.header["action"])
         # TODO: switch statements here
@@ -307,18 +308,24 @@ class Message:
                     "success": False,
                     "error": "Incorrect password",
                 }
+        elif self.header["action"] == "error":
+            response_content = {
+                "response_type": "error",
+                "error": f"An error occurred. Please try again."
+            }
         else:
             response_content = {
-                "content": request_content,
-                "response_type": "echo"
+                "response_type": "error",
+                "error": f"Invalid action: {self.header['action']}"
             }
+
+            self.header["action"] = "error"
             
         if self.protocol_mode == "json":
             content_bytes = self._json_encode(response_content, "utf-8")
         elif self.protocol_mode == "custom":
             content_bytes = self.custom_protocol.serialize(response_content)
-        else:
-            raise ValueError(f"Invalid protocol mode {self.protocol_mode!r}")
+            
         response = {
             "content_bytes": content_bytes,
             "action": "response",
@@ -400,7 +407,7 @@ class Message:
                 "action",
             ):
                 if reqhdr not in self.header:
-                    raise ValueError(f"Missing required header '{reqhdr}'.")
+                    self.header["action"] = "error"
 
     def process_request(self):
         content_len = self.header["content-length"]

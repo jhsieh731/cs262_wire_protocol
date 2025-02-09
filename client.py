@@ -5,7 +5,7 @@ import threading
 import tkinter as tk
 import datetime
 import hashlib
-from tkinter import scrolledtext
+from tkinter import scrolledtext, messagebox
 import msg_client
 
 
@@ -421,8 +421,8 @@ class ClientGUI:
             self.load_messages()
         
         elif response_type == "error": # Handle error response
-            print("Error: ", response.get("response", "An error occurred"))
-            self.create_error_page(response.get("response", "An error occurred"))
+            print("Error: ", response.get("error", "An error occurred"))
+            messagebox.showerror("Error", response.get("error", "An error occurred"), icon="warning")
     
 
     def thread_send(self, request):

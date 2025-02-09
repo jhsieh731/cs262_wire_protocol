@@ -238,7 +238,7 @@ class MessageDatabase:
                 count_sql = "SELECT COUNT(*) as total FROM users"
                 cursor.execute(count_sql)
             else:
-                count_sql = "SELECT COUNT(*) as total FROM users WHERE username LIKE ? || '%'"
+                count_sql = "SELECT COUNT(*) as total FROM users WHERE username LIKE '%' || ? || '%'"
                 cursor.execute(count_sql, (search_term,))
             
             total_count = cursor.fetchone()["total"]
@@ -261,7 +261,7 @@ class MessageDatabase:
                 search_sql = """
                     SELECT userid, username 
                     FROM users 
-                    WHERE username LIKE ? || '%'
+                    WHERE username LIKE '%' || ? || '%'
                     ORDER BY username ASC
                     LIMIT ? OFFSET ?
                 """
