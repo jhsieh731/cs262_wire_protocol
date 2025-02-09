@@ -215,7 +215,7 @@ class Message:
                 "action",
             ):
                 if reqhdr not in self.header:
-                    raise ValueError(f"Missing required header '{reqhdr}'.")
+                    self.header["action"] = "error"
 
     def reset_state(self):
         """Reset the message state to handle new requests/responses"""
@@ -242,7 +242,7 @@ class Message:
                 # verify checksum
                 computed_checksum = self.custom_protocol.compute_checksum(data)
                 if computed_checksum != self.header["checksum"]:
-                    raise ValueError("Checksums do not match.")
+                    self.header["action"] = "error"
             else:
                 raise ValueError(f"Invalid protocol mode {self.protocol_mode!r}.")
             print(f"Decoded response: {decoded_response}")
