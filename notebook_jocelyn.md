@@ -50,6 +50,7 @@ jsonheader:
 "content-length"
 "action"
 
+
 actions: 
 "load_page_data"
 "search_accounts"
@@ -74,9 +75,14 @@ content:
 "username"
 "password"
 
+
 todo:
-- serializing/deserializing maybe?
+
 
 done:
+- only recipient can delete message
 - cleaning up msg_server response_content
 - fix login password hash
+- pagination bug for prev/next buttons
+- serializing/deserializing maybe?
+
