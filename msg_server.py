@@ -4,6 +4,7 @@ import selectors
 import struct
 import sys
 from database import MessageDatabase
+from custom_protocol import CustomProtocol
 
 db = MessageDatabase()
 
@@ -20,10 +21,12 @@ class Message:
         self.addr = addr
         self._recv_buffer = b""
         self._send_buffer = b""
-        self._jsonheader_len = None
-        self.jsonheader = None
+        self._header_len = None
+        self.header = None
         self.request = None
         self.response_created = False
+        self.protocol_mode = "custom"
+        self.custom_protocol = CustomProtocol()
 
     def _set_selector_events_mask(self, mode):
         """Set selector to listen for events: mode is 'r', 'w', or 'rw'."""
@@ -63,8 +66,8 @@ class Message:
                 self._send_buffer = self._send_buffer[sent:]
                 # After sending, reset state and switch back to read mode
                 if sent and not self._send_buffer:
-                    self._jsonheader_len = None
-                    self.jsonheader = None
+                    self._header_len = None
+                    self.header = None
                     self.request = None
                     self.response_created = False
                     self._set_selector_events_mask("r")
@@ -85,23 +88,36 @@ class Message:
     def _create_message(
         self, *, content_bytes, action, content_length
     ):
-        jsonheader = {
+        header = {
             "content-length": content_length,
             "action": action,
         }
-        jsonheader_bytes = self._json_encode(jsonheader, "utf-8")
-        message_hdr = struct.pack(">H", len(jsonheader_bytes))
-        message = message_hdr + jsonheader_bytes + content_bytes
+        if self.protocol_mode == "json":
+            header_bytes = self._json_encode(header, "utf-8")
+        elif self.protocol_mode == "custom":
+            checksum = self.custom_protocol.compute_checksum(content_bytes)
+            header["checksum"] = checksum
+            header_bytes = self.custom_protocol.serialize(header)
+        else:
+            raise ValueError(f"Invalid protocol mode {self.protocol_mode!r}")
+        message_hdr = struct.pack(">H", len(header_bytes))
+        message = message_hdr + header_bytes + content_bytes
         return message
 
-    def _create_response_json_content(self):
+    def _create_response_content(self):
         # First decode the request content
-        request_content = self._json_decode(self.request, "utf-8")
+        if self.protocol_mode == "json":
+            request_content = self._json_decode(self.request, "utf-8")
+        elif self.protocol_mode == "custom":
+            request_content = self.custom_protocol.deserialize(self.request)
+            computed_checksum = self.custom_protocol.compute_checksum(self.request)
+            if computed_checksum != self.header.get("checksum", None):
+                raise ValueError("Checksum mismatch")
         response_content = {}
-        print("action: ", self.jsonheader["action"])
+        print("action: ", self.header["action"])
         # TODO: switch statements here
         # Create response content and encode it
-        if self.jsonheader["action"] == "login_register":
+        if self.header["action"] == "login_register":
             # try to login
             accounts = db.login_or_create_account(request_content["username"], request_content["password"], str(self.addr))
             print("account: ", accounts)
@@ -110,18 +126,12 @@ class Message:
                     "response": "Invalid username or password",
                     "response_type": "error"
                 }
-                response_content["response"] = "Invalid username or password"
             else:
                 response_content = {
                     "uuid": accounts[0]["userid"],
                     "response_type": "login_register"
                 }
-        elif self.jsonheader["action"] == "load_page_data":
-            print("loading page data")
-            # Decode the request content
-            request_content = self._json_decode(self.request, "utf-8")
-            print("Request content:", request_content)
-
+        elif self.header["action"] == "load_page_data":
             user_uuid = request_content.get("uuid", None)
 
             # Load page data
@@ -136,12 +146,7 @@ class Message:
                 "response_type": "load_page_data"
             }
 
-        elif self.jsonheader["action"] == "search_accounts":
-            print("searching accounts")
-            # Decode the request content
-            request_content = self._json_decode(self.request, "utf-8")
-            print("Request content:", request_content)
-
+        elif self.header["action"] == "search_accounts":
             search_term = request_content.get("search_term", "")
             current_page = request_content.get("current_page", 0)
             accounts_per_page = 10
@@ -156,11 +161,7 @@ class Message:
                 "total_count": total_count,
                 "response_type": "search_accounts"
             }
-        elif self.jsonheader["action"] == "load_messages":
-            # Decode the request content
-            request_content = self._json_decode(self.request, "utf-8")
-            print("Request content load messages:", request_content)
-            
+        elif self.header["action"] == "load_messages":
             user_uuid = request_content.get("uuid", None)
             num_messages = request_content.get("num_messages", None)
             print(f"Loading messages for user {user_uuid} and num_messages {num_messages}")
@@ -174,19 +175,16 @@ class Message:
                 "total_undelivered": total_undelivered,
                 "response_type": "load_messages"
             }
-        elif self.jsonheader["action"] == "send_message":
-            # Decode the request content
-            request_content = self._json_decode(self.request, "utf-8")
-            print("Send message request:", request_content)
-            
+        elif self.header["action"] == "send_message":
             # Extract message details
-            sender_uuid = request_content.get("sender_uuid")
+            sender_uuid = request_content.get("uuid")
             recipient_username = request_content.get("recipient_username")
             message_text = request_content.get("message")
+            timestamp = request_content.get("timestamp")
 
-            print("message details: ", sender_uuid, recipient_username, message_text)
+            print("message details: ", sender_uuid, recipient_username, message_text, timestamp)
             
-            if not all([sender_uuid, recipient_username, message_text]):
+            if not all([sender_uuid, recipient_username, message_text, timestamp]):
                 response_content = {
                     "success": False,
                     "error": "Missing required fields",
@@ -221,7 +219,12 @@ class Message:
                         }
                         
                         # Convert content to bytes for sending
-                        relay_content_bytes = self._json_encode(relay_content, "utf-8")
+                        if self.protocol_mode == "json":
+                            relay_content_bytes = self._json_encode(relay_content, "utf-8")
+                        elif self.protocol_mode == "custom":
+                            relay_content_bytes = self.custom_protocol.serialize(relay_content)
+                        else:
+                            raise ValueError(f"Invalid protocol mode {self.protocol_mode!r}")
                         relay_message = self._create_message(
                             content_bytes=relay_content_bytes,
                             action="receive_message",
@@ -245,7 +248,7 @@ class Message:
                             print(f"Error relaying message: {e}")
 
                     # Store the message
-                    success, error = db.store_message(sender_uuid, recipient_uuid, message_text, status)
+                    success, error = db.store_message(sender_uuid, recipient_uuid, message_text, status, timestamp)
                     
                     # Create response for sender
                     response_content = {
@@ -254,11 +257,7 @@ class Message:
                         "response_type": "send_message",
                         "delivered": bool(recipient_socket)
                     }
-        elif self.jsonheader["action"] == "load_undelivered":
-            # Decode the request content
-            request_content = self._json_decode(self.request, "utf-8")
-            print("Request content load undelivered:", request_content)
-            
+        elif self.header["action"] == "load_undelivered":
             user_uuid = request_content.get("uuid", None)
             num_messages = request_content.get("num_messages", 0)
             print(f"Loading undelivered messages for user {user_uuid}")
@@ -271,19 +270,16 @@ class Message:
                 "messages": messages,
                 "response_type": "load_undelivered"
             }
-        elif self.jsonheader["action"] == "delete_messages":
+        elif self.header["action"] == "delete_messages":
             print("Deleting messages")
             msg_ids = request_content.get("msgids", [])
-            db.delete_messages(msg_ids)
+            num_deleted = db.delete_messages(msg_ids)
             print(f"db delete_messages ran")
             response_content = {
                 "response_type": "delete_messages",
-                "status": "success",
-                "num_deleted": len(msg_ids),
-                "message": "Messages successfully deleted"
+                "num_deleted": num_deleted,
             }
-        elif self.jsonheader["action"] == "delete_account":
-            request_content = self._json_decode(self.request, "utf-8")
+        elif self.header["action"] == "delete_account":
             user_uuid = request_content.get("uuid")
             password = request_content.get("password")
             
@@ -296,20 +292,20 @@ class Message:
                 if db.delete_user(user_uuid):
                     response_content = {
                         "response_type": "delete_account",
-                        "status": "success",
-                        "message": "Account successfully deleted"
+                        "success": True,
+                        "error": "",
                     }
                 else:
                     response_content = {
                         "response_type": "delete_account",
-                        "status": "error",
-                        "message": "Failed to delete account"
+                        "success": False,
+                        "error":  "Failed to delete account",
                     }
             else:
                 response_content = {
                     "response_type": "delete_account",
-                    "status": "error",
-                    "message": "Incorrect password"
+                    "success": False,
+                    "error": "Incorrect password",
                 }
         else:
             response_content = {
@@ -317,7 +313,12 @@ class Message:
                 "response_type": "echo"
             }
             
-        content_bytes = self._json_encode(response_content, "utf-8")
+        if self.protocol_mode == "json":
+            content_bytes = self._json_encode(response_content, "utf-8")
+        elif self.protocol_mode == "custom":
+            content_bytes = self.custom_protocol.serialize(response_content)
+        else:
+            raise ValueError(f"Invalid protocol mode {self.protocol_mode!r}")
         response = {
             "content_bytes": content_bytes,
             "action": "response",
@@ -336,14 +337,14 @@ class Message:
     def read(self):
         self._read()
 
-        if self._jsonheader_len is None:
+        if self._header_len is None:
             self.process_protoheader()
 
-        if self._jsonheader_len is not None:
-            if self.jsonheader is None:
-                self.process_jsonheader()
+        if self._header_len is not None:
+            if self.header is None:
+                self.process_header()
 
-        if self.jsonheader:
+        if self.header:
             if self.request is None:
                 self.process_request()
 
@@ -377,27 +378,32 @@ class Message:
     def process_protoheader(self):
         hdrlen = 2
         if len(self._recv_buffer) >= hdrlen:
-            self._jsonheader_len = struct.unpack(
+            self._header_len = struct.unpack(
                 ">H", self._recv_buffer[:hdrlen]
             )[0]
             self._recv_buffer = self._recv_buffer[hdrlen:]
 
-    def process_jsonheader(self):
-        hdrlen = self._jsonheader_len
+    def process_header(self):
+        hdrlen = self._header_len
         if len(self._recv_buffer) >= hdrlen:
-            self.jsonheader = self._json_decode(
-                self._recv_buffer[:hdrlen], "utf-8"
-            )
+            if self.protocol_mode == "json":
+                self.header = self._json_decode(
+                    self._recv_buffer[:hdrlen], "utf-8"
+                )
+            elif self.protocol_mode == "custom":
+                self.header = self.custom_protocol.deserialize(self._recv_buffer[:hdrlen])
+            else:
+                raise ValueError(f"Invalid protocol mode {self.protocol_mode!r}")
             self._recv_buffer = self._recv_buffer[hdrlen:]
             for reqhdr in (
                 "content-length",
                 "action",
             ):
-                if reqhdr not in self.jsonheader:
+                if reqhdr not in self.header:
                     raise ValueError(f"Missing required header '{reqhdr}'.")
 
     def process_request(self):
-        content_len = self.jsonheader["content-length"]
+        content_len = self.header["content-length"]
         if not len(self._recv_buffer) >= content_len:
             return
         data = self._recv_buffer[:content_len]
@@ -409,7 +415,7 @@ class Message:
         self._set_selector_events_mask("w")
 
     def create_response(self):
-        response = self._create_response_json_content()
+        response = self._create_response_content()
         message = self._create_message(**response)
         self.response_created = True
         self._send_buffer += message

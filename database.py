@@ -98,38 +98,6 @@ class MessageDatabase:
             if conn:
                 conn.close()
 
-    def check_unique_username(self, username: str) -> bool:
-        """Check if the username is unique."""
-        sql = """SELECT * FROM users WHERE username = ?;"""
-        try:
-            conn = self.connect()
-            cursor = conn.cursor()
-            cursor.execute(sql, (username,))
-            return cursor.fetchone() is None
-        except sqlite3.Error as e:
-            print(f"Error checking unique username: {e}")
-            return False
-        finally:
-            if conn:
-                conn.close()
-
-    def store_message(self, sender_id: str, receiver_id: str, content: str) -> bool:
-        """Store a new message in the database."""
-        sql = """INSERT INTO messages (sender_id, receiver_id, content)
-                VALUES (?, ?, ?);"""
-        try:
-            conn = self.connect()
-            cursor = conn.cursor()
-            cursor.execute(sql, (sender_id, receiver_id, content))
-            conn.commit()
-            return True
-        except sqlite3.Error as e:
-            print(f"Error storing message: {e}")
-            return False
-        finally:
-            if conn:
-                conn.close()
-
     def get_messages(self, sender_uuid: str, receiver_uuid: str) -> List[Tuple]:
         """Retrieve messages based on sender and receiver UUIDs.
         Empty strings for either UUID will match all values for that field."""
@@ -219,7 +187,7 @@ class MessageDatabase:
             if conn:
                 conn.close()
 
-    def store_message(self, sender_uuid: str, recipient_uuid: str, message_text: str, status: bool) -> tuple[bool, str]:
+    def store_message(self, sender_uuid: str, recipient_uuid: str, message_text: str, status: bool, timestamp) -> tuple[bool, str]:
         """
         Store a message in the database.
         Returns (success, error_message)
@@ -236,9 +204,9 @@ class MessageDatabase:
             
             # Insert the message using UUIDs directly
             cursor.execute("""
-                INSERT INTO messages (senderuuid, recipientuuid, message, status)
-                VALUES (?, ?, ?, ?)
-            """, (sender_uuid, recipient_uuid, message_text, status))
+                INSERT INTO messages (senderuuid, recipientuuid, message, status, timestamp)
+                VALUES (?, ?, ?, ?, ?)
+            """, (sender_uuid, recipient_uuid, message_text, status, timestamp,))
             
             conn.commit()
             return True, ""
@@ -475,28 +443,31 @@ class MessageDatabase:
         try:
             conn = self.connect()
             if conn is None:
-                return False
+                return 0
 
             print("MESSAGE IDS:", msg_ids)
             cursor = conn.cursor()
             for msg_id in msg_ids:
                 cursor.execute("DELETE FROM messages WHERE msgid = ?", (msg_id,))
                 print(f"Deleted message: {msg_id}")
-            conn.commit()
+            conn.commit()  # Commit the transaction before verification
             print(f"Deleted messages: {msg_ids}")
 
             # verify deletion
-            cursor.execute("SELECT msgid FROM messages WHERE msgid IN ({})".format(",".join("?" * len(msg_ids))), msg_ids)
-            if cursor.fetchone() is None:
-                print(f"Successfully deleted messages: {msg_ids}")
-                return True
-            else:
-                print(f"Failed to delete messages: {msg_ids}")
-                return False
-            
+            sql = "SELECT COUNT(msgid) AS num_remaining FROM messages WHERE msgid IN ({})".format(",".join("?" * len(msg_ids)))
+            print("SQL:", sql)
+            cursor.execute(sql, msg_ids)
+            print(460)
+            num_remaining = cursor.fetchone()[0]
+            print("NUM REMAINING:", num_remaining)
+
+            num_deleted = len(msg_ids) - num_remaining
+            print(f"Deleted {num_deleted} messages")
+            return num_deleted
+
         except sqlite3.Error as e:
             print(f"Error deleting messages: {e}")
-            return False
+            return 0
         finally:
             if conn:
                 conn.close()
