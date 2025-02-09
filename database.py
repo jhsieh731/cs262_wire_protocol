@@ -29,7 +29,6 @@ class MessageDatabase:
         );
         """
 
-
         create_messages_sql = """
         CREATE TABLE messages (
             msgid INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -304,7 +303,7 @@ class MessageDatabase:
         finally:
             if conn:
                 conn.close()
-                
+
     def delete_user(self, uuid: int) -> bool:
         """Delete a user by their UUID.
         
@@ -377,7 +376,7 @@ class MessageDatabase:
         finally:
             if conn:
                 conn.close()
-                
+
     def load_messages(self, user_uuid, num_messages):
         """Load the most recent messages for a user."""
         try:
@@ -436,7 +435,6 @@ class MessageDatabase:
         messages, num_pending = self.load_messages(user_uuid, 10)
         accounts, total_count = self.search_accounts("", 0, 10)
         return messages, num_pending, accounts, total_count
-
 
     def delete_messages(self, msg_ids):
         """Delete messages by their IDs."""
@@ -509,7 +507,7 @@ class MessageDatabase:
             cursor.execute("UPDATE messages SET status = 'delivered' WHERE msgid IN ({})".format(",".join("?" * len(msg_ids))), msg_ids)
             conn.commit()
             return [dict(message) for message in messages]
-            
+
         except sqlite3.Error as e:
             print(f"Error loading undelivered messages: {e}")
             return []

@@ -44,6 +44,8 @@ Header:
 
 2/5/25: Added UI interface to create account/login. Would love to add a temporary dictionary storing mappings to active soccets/userids, but need to somehow bypass my message object
 
+2/6/25-2/9/25: Oops! I literally had the flu and a high grade fever, but don't worry I still made progress on this project because the grind never stops (even on your deathbed). Hooray. 
+
 
 jsonheader: 
 "version"
@@ -76,13 +78,8 @@ content:
 "password"
 
 
-todo:
+Should we forcibly try to determine whether an incoming request is json or custom & then match it? 
 
 
-done:
-- only recipient can delete message
-- cleaning up msg_server response_content
-- fix login password hash
-- pagination bug for prev/next buttons
-- serializing/deserializing maybe?
-
+add-ons:
+- We should probably use "action" in our server messages instead of response-type but lowkey that's a lot of work

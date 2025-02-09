@@ -177,7 +177,7 @@ class ClientGUI:
     def search_accounts(self):
         search_term = self.search_bar.get()
         request = {
-            "action": "search_accounts",
+            "action": "false",
             "content": {"search_term": search_term, "current_page": self.current_page},
         }
         self.thread_send(request)
