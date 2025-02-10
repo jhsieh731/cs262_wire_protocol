@@ -2,13 +2,14 @@ class CustomProtocol:
     # compute checksum
     @staticmethod
     def compute_checksum(data):
+        """Computes a simple checksum for the given string of bytes."""
         return sum(data) % 256
 
     @staticmethod
     def serialize_part(data):
         """Converts a dictionary with nested lists/dictionaries into a string representation."""
         if isinstance(data, dict):
-            items = [f"{CustomProtocol.escape_key(str(key))}:{CustomProtocol.serialize_part(value)}" for key, value in data.items()]
+            items = [f"{CustomProtocol._escape_key(str(key))}:{CustomProtocol.serialize_part(value)}" for key, value in data.items()]
             return "{" + ",".join(items) + "}"
         elif isinstance(data, list):
             serialized_items = [CustomProtocol.serialize_part(item) for item in data]
@@ -48,7 +49,7 @@ class CustomProtocol:
             return None
         elif "." in data and data.replace(".", "", 1).isdigit():
             return float(data)
-        elif data.isdigit():
+        elif CustomProtocol._is_number(data):
             return int(data)
         else:
             return data  # Should not happen in well-formed input
@@ -69,7 +70,7 @@ class CustomProtocol:
         for item in items:
             if ":" in item:
                 key, value = item.split(":", 1)
-                result[CustomProtocol.unescape_key(key)] = CustomProtocol.deserialize_part(value)
+                result[CustomProtocol._unescape_key(key)] = CustomProtocol.deserialize_part(value)
         return result
 
     @staticmethod
@@ -98,16 +99,22 @@ class CustomProtocol:
         if current.strip():
             items.append(current.strip())
         return items
+    
+    @staticmethod
+    def _is_number(value):
+        if value.startswith("-"):
+                value = value[1:]
+        return value.replace(".", "", 1).isdigit()
 
     @staticmethod
-    def escape_key(key):
+    def _escape_key(key):
         """Escapes dictionary keys to ensure proper serialization."""
         if any(c in key for c in ":{},[]"):
             return f'"{key}"'
         return key
 
     @staticmethod
-    def unescape_key(key):
+    def _unescape_key(key):
         """Unescapes dictionary keys after unserialization."""
         return key[1:-1] if key.startswith('"') and key.endswith('"') else key
 
