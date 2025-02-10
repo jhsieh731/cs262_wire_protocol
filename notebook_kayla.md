@@ -95,13 +95,3 @@ Infinite scroll:
 
 TODO: On server side, check server number. If server doesn’t match, return error
 TODO: On server side, if error parsing data, return the packet
-
-TODO: Demo (5-10 minutes)
-TODO: Code walkthrough (10 minutes)
-TODO: Code review (10 minutes)
-    On Friday 2/14, turn in:
-        Code, tests, docs
-        Engineering notebooks
-    On Sunday 2/16, turn in:
-        Review for each of the other groups
-        Grade of 1-5
