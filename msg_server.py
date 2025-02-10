@@ -89,6 +89,7 @@ class Message:
         self, *, content_bytes, action, content_length
     ):
         header = {
+            "version": 1,
             "content-length": content_length,
             "action": action,
         }
@@ -100,7 +101,8 @@ class Message:
             header_bytes = self.custom_protocol.serialize(header)
         else:
             raise ValueError(f"Invalid protocol mode {self.protocol_mode!r}")
-        message_hdr = struct.pack(">H", len(header_bytes))
+        # Pack version (1 byte) and header length (2 bytes)
+        message_hdr = struct.pack(">BH", 1, len(header_bytes))
         message = message_hdr + header_bytes + content_bytes
         return message
 
@@ -383,7 +385,19 @@ class Message:
 
     # TODO: rethink these two based on how we form our custom messages
     def process_protoheader(self):
-        hdrlen = 2
+        version_len = 1  # 1 byte for version
+        hdrlen = 2  # fixed length for header length
+        
+        # First check version
+        if len(self._recv_buffer) >= version_len:
+            version = struct.unpack(">B", self._recv_buffer[:version_len])[0]
+            if version != 1:
+                raise ValueError(f"Cannot handle protocol version {version}")
+            self._recv_buffer = self._recv_buffer[version_len:]
+        else:
+            return
+            
+        # Then process header length
         if len(self._recv_buffer) >= hdrlen:
             self._header_len = struct.unpack(
                 ">H", self._recv_buffer[:hdrlen]
