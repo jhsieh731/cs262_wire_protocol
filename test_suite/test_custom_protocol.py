@@ -2,6 +2,8 @@ import unittest
 import sys
 import os
 
+# to run: python3 -m unittest test_suite/test_custom_protocol.py -v
+
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from custom_protocol import CustomProtocol
 
