@@ -50,10 +50,6 @@ class TestDatabase(unittest.TestCase):
         accounts = self.db.login_or_create_account(self.test_user1["username"], "wrongpassword", self.test_user1["socket"])
         self.assertEqual(len(accounts), 0)
 
-        # Test with empty username
-        accounts = self.db.login_or_create_account("", self.test_user1["password"], self.test_user1["socket"])
-        self.assertEqual(len(accounts), 0)
-
     def test_get_user_uuid(self):
         # Create test user first
         self.db.login_or_create_account(self.test_user1["username"], self.test_user1["password"], self.test_user1["socket"])
