@@ -91,6 +91,7 @@ class Message:
     ):
         """Create a message with the given content"""
         header = {
+            "version": 1,
             "content-length": content_length,
             "action": action,
         }

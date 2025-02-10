@@ -100,7 +100,6 @@ class Message:
             checksum = self.custom_protocol.compute_checksum(content_bytes)
             header["checksum"] = checksum
             header_bytes = self.custom_protocol.serialize(header)
-
         # Pack version (1 byte) and header length (2 bytes)
         message_hdr = struct.pack(">BH", 1, len(header_bytes))
         message = message_hdr + header_bytes + content_bytes
