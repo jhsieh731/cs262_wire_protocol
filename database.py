@@ -1,5 +1,5 @@
 import sqlite3
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 import os
 
 class MessageDatabase:
@@ -8,6 +8,12 @@ class MessageDatabase:
         self.db_file = db_file
         self.conn = None
         self.create_tables()
+
+    def close(self):
+        """Close the database connection."""
+        if self.conn:
+            self.conn.close()
+            self.conn = None
 
     def connect(self):
         """Create a database connection."""
@@ -21,7 +27,7 @@ class MessageDatabase:
     def create_tables(self):
         """Create the messages table if it doesn't exist."""
         create_users_sql = """
-        CREATE TABLE users (
+        CREATE TABLE IF NOT EXISTS users (
             userid INTEGER PRIMARY KEY AUTOINCREMENT,
             username TEXT UNIQUE NOT NULL,
             hashed_password TEXT NOT NULL,
@@ -30,7 +36,7 @@ class MessageDatabase:
         """
 
         create_messages_sql = """
-        CREATE TABLE messages (
+        CREATE TABLE IF NOT EXISTS messages (
             msgid INTEGER PRIMARY KEY AUTOINCREMENT,
             senderuuid INTEGER NOT NULL,
             recipientuuid INTEGER NOT NULL,
@@ -161,27 +167,32 @@ class MessageDatabase:
             if conn:
                 conn.close()
 
-    def get_associated_socket(self, user_uuid: str) -> str:
+    def get_associated_socket(self, user_uuid: str) -> Optional[str]:
         """
         Get the associated socket for a user by their UUID.
-        Returns the socket string if found, empty string if not found or error.
+        
+        Args:
+            user_uuid: The user's UUID
+            
+        Returns:
+            str or None: The associated socket if user exists, None otherwise
         """
         try:
             conn = self.connect()
             if conn is None:
-                return ""
+                return None
 
             cursor = conn.cursor()
             cursor.execute("SELECT associated_socket FROM users WHERE userid = ?", (user_uuid,))
             result = cursor.fetchone()
             
-            if result and result[0]:
+            if result:
                 return result[0]
-            return ""
+            return None
             
         except sqlite3.Error as e:
             print(f"Error getting associated socket: {e}")
-            return ""
+            return None
         finally:
             if conn:
                 conn.close()
