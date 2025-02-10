@@ -75,6 +75,9 @@ if __name__ == '__main__':
         host = config['host']
         port = config['port']
         accepted_versions = config['accepted_versions']
+        if port < 1024 and port != 0:  # Avoid privileged ports
+            print("Error: Please use a port number >= 1024")
+            sys.exit(1)
         lsock = initialize_server(host, port)
         run_server(accepted_versions)
     except Exception as e:
@@ -83,3 +86,6 @@ if __name__ == '__main__':
     except KeyboardInterrupt:
         print("\nShutting down server...")
         sys.exit(0)
+    except ValueError:
+        print(f"Error: Port must be a number")
+        sys.exit(1)
