@@ -6,6 +6,8 @@ import sys
 import server
 from msg_server import Message
 
+# To run: python3 -m unittest test_suite/test_server.py -v
+
 class TestServer(unittest.TestCase):
     def setUp(self):
         """Set up test fixtures before each test method."""

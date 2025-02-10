@@ -11,8 +11,17 @@ import msg_client
 
 
 # Networking Setup
-sel = selectors.DefaultSelector()
-host, port = sys.argv[1], int(sys.argv[2])
+sel = None
+host = None
+port = None
+
+def initialize_client(server_host, server_port):
+    """Initialize the client with the given host and port."""
+    global sel, host, port
+    sel = selectors.DefaultSelector()
+    host = server_host
+    port = server_port
+    return sel
 
 # GUI Setup
 class ClientGUI:
@@ -486,5 +495,19 @@ def send_to_server(request):
         msg_obj._set_selector_events_mask("w")
 
 
-# Run the Tkinter main loop
-root.mainloop()
+if __name__ == '__main__':
+    if len(sys.argv) != 3:
+        print(f"Usage: {sys.argv[0]} <host> <port>")
+        sys.exit(1)
+    try:
+        server_host = sys.argv[1]
+        server_port = int(sys.argv[2])
+    except ValueError:
+        print(f"Error: Port must be a number")
+        sys.exit(1)
+    
+    # Initialize client
+    initialize_client(server_host, server_port)
+    
+    # Run the Tkinter main loop
+    root.mainloop()
