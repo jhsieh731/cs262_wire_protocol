@@ -46,12 +46,6 @@ class ClientGUI:
 
         self.create_login_page()
 
-    # def on_select(self, event):
-    #     selected_indices = self.messages_listbox.curselection()
-    #     for index in selected_indices:
-    #         if index not in self.msgid_map:
-    #             self.messages_listbox.selection_clear(index)
-
     def clear_frame(self, frame):
         for widget in frame.winfo_children():
             widget.destroy()
@@ -100,13 +94,17 @@ class ClientGUI:
         self.accounts_frame = tk.Frame(self.chat_frame)
         self.accounts_frame.grid(row=0, column=0, sticky="nsew")
 
-        self.search_bar = tk.Entry(self.accounts_frame)
-        self.search_bar.pack(padx=10, pady=5)
-        self.search_button = tk.Button(self.accounts_frame, text="Search", command=self.search_accounts)
-        self.search_button.pack(padx=10, pady=5)
+        search_frame = tk.Frame(self.accounts_frame)
+        search_frame.pack(padx=10, pady=5)
+        
+        self.search_bar = tk.Entry(search_frame)
+        self.search_bar.pack(side=tk.LEFT, padx=(0, 5))
+        
+        self.search_button = tk.Button(search_frame, text="Search", command=self.search_accounts)
+        self.search_button.pack(side=tk.LEFT)
 
         # Delete Account Button
-        self.delete_account_button = tk.Button(self.accounts_frame, text="Delete My Account", command=self.confirm_delete_account)
+        self.delete_account_button = tk.Button(self.accounts_frame, text="Delete my account", command=self.confirm_delete_account, fg="red")
         self.delete_account_button.pack(padx=10, pady=5)
 
         self.accounts_listbox = tk.Listbox(self.accounts_frame)
@@ -335,7 +333,7 @@ class ClientGUI:
             self.create_login_page()
 
         # Buttons
-        delete_button = tk.Button(dialog, text="Delete Account", command=delete_account, fg="red")
+        delete_button = tk.Button(dialog, text="Delete account", command=delete_account, fg="red")
         delete_button.pack(pady=10)
         
         cancel_button = tk.Button(dialog, text="Cancel", command=dialog.destroy)
