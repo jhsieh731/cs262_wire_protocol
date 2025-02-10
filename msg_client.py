@@ -99,7 +99,8 @@ class Message:
             print(97, header_bytes)
         else:
             raise ValueError(f"Invalid protocol mode {self.protocol_mode!r}.")
-        message_hdr = struct.pack(">H", len(header_bytes))
+        # Pack version (1 byte) and header length (2 bytes)
+        message_hdr = struct.pack(">BH", 1, len(header_bytes))
         message = message_hdr + header_bytes + content_bytes
         print(f"Created message: {message!r}")
         return message
@@ -184,7 +185,19 @@ class Message:
 
     def process_protoheader(self):
         print("process_protoheader")
-        hdrlen = 2 # fixed length
+        version_len = 1  # 1 byte for version
+        hdrlen = 2  # fixed length for header length
+        
+        # First check version
+        if len(self._recv_buffer) >= version_len:
+            version = struct.unpack(">B", self._recv_buffer[:version_len])[0]
+            if version != 1:
+                raise ValueError(f"Cannot handle protocol version {version}")
+            self._recv_buffer = self._recv_buffer[version_len:]
+        else:
+            return
+            
+        # Then process header length
         if len(self._recv_buffer) >= hdrlen:
             print("len of buffer: ", len(self._recv_buffer))
             self._header_len = struct.unpack(
