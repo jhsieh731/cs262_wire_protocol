@@ -51,7 +51,7 @@ def network_thread(request):
             if not sel.get_map():
                 break
     except KeyboardInterrupt:
-        print("Caught keyboard interrupt, exiting")
+        logger.info("Caught keyboard interrupt, exiting")
     finally:
         print("selectors closed")
         sel.close()

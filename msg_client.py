@@ -2,7 +2,23 @@ import io
 import json
 import selectors
 import struct
+import logging
 from custom_protocol_2 import CustomProtocol
+
+# Set up logging
+client_logger = logging.getLogger('msg_client')
+client_logger.setLevel(logging.INFO)
+
+# Create file handler
+fh = logging.FileHandler('msg_client_log.txt')
+fh.setLevel(logging.INFO)
+
+# Create formatter
+formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+fh.setFormatter(formatter)
+
+# Add handler to logger
+client_logger.addHandler(fh)
 
 
 # TODO: link this with client/server...
@@ -56,7 +72,7 @@ class Message:
         """Write to the socket."""
         print("_write")
         if self._send_buffer:
-            print(f"Sending {self._send_buffer!r} to {self.addr}")
+            client_logger.info(f"Sending {self._send_buffer!r} to {self.addr}")
             try:
                 # Should be ready to write
                 sent = self.sock.send(self._send_buffer)
@@ -110,10 +126,10 @@ class Message:
     def process_events(self, mask):
         """Process selector events (step 1 of processing)"""
         if mask & selectors.EVENT_READ:
-            print("read")
+            client_logger.debug("Read event received")
             self.read()
         if mask & selectors.EVENT_WRITE:
-            print("write")
+            client_logger.debug("Write event received")
             self.write()
 
     def read(self):
