@@ -230,7 +230,7 @@ class Message:
                     
                     relay_message = self._create_message(
                         content_bytes=relay_content_bytes,
-                        action="receive_message",
+                        action="receive_message_r",
                         content_length=len(relay_content_bytes)
                     )
                     
