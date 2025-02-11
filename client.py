@@ -19,14 +19,6 @@ def initialize_client(server_host, server_port):
     port = server_port
     return sel
 
-def initialize_client(server_host, server_port):
-    """Initialize the client with the given host and port."""
-    global sel, host, port
-    sel = selectors.DefaultSelector()
-    host = server_host
-    port = server_port
-    return sel
-
 # Send message to the server
 def send_to_server(request):
      for key in list(sel.get_map().values()):
