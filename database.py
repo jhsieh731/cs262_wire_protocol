@@ -71,17 +71,32 @@ class MessageDatabase:
         check_username_sql = """SELECT * FROM users WHERE username = ?;"""
         update_socket_sql = """UPDATE users SET associated_socket = ? WHERE userid = ?;"""
 
+        # Guard for empty strings; msg_server will handle this as failure
         if not username or not password or not socket:
             return []
 
+        # convert username to lowercase
+        username = username.lower()
+
         try:
             conn = self.connect()
+            if conn is None:
+                return []
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
             
-            # Check if the username and password match exactly 1 record
+            # Check if the username and password match records
             cursor.execute(login_sql, (username, password))
-            user = cursor.fetchone()
+            res = cursor.fetchall()
+            print("res: ", res)
+
+            # Check if multiple users have the same username and password
+            if len(res) > 1:
+                print("Error: multiple users with the same username and password")
+                return []
+            user = res[0] if len(res) == 1 else None
+
+            # login
             if user:
                 # update socket
                 print("logging in, socket: ", socket, len(socket))
@@ -89,9 +104,9 @@ class MessageDatabase:
                 conn.commit()
                 return [dict(user)]
             
-            # Check if the username is unique
-            cursor.execute(check_username_sql, (username,))
-            if cursor.fetchone() is None:
+            # Register; Check if the username is unique
+            username_res = cursor.execute(check_username_sql, (username,))
+            if username_res is None:
                 # Create a new account
                 cursor.execute(create_account_sql, (username, password, socket))
                 conn.commit()
@@ -106,44 +121,6 @@ class MessageDatabase:
         finally:
             if conn:
                 conn.close()
-
-    def get_messages(self, sender_uuid: str, receiver_uuid: str) -> List[Tuple]:
-        """Retrieve messages based on sender and receiver UUIDs.
-        Empty strings for either UUID will match all values for that field."""
-        try:
-            conn = self.connect()
-            cursor = conn.cursor()
-            
-            # Build the WHERE clause based on which UUIDs are provided
-            conditions = []
-            params = []
-            
-            if sender_uuid:
-                conditions.append("senderuuid = ?")
-                params.append(sender_uuid)
-            if receiver_uuid:
-                conditions.append("recipientuuid = ?")
-                params.append(receiver_uuid)
-            
-            # If no conditions, return all messages
-            where_clause = " AND ".join(conditions) if conditions else "1=1"
-            
-            sql = f"""SELECT senderuuid, recipientuuid, message, status, timestamp 
-                    FROM messages 
-                    WHERE {where_clause}
-                    ORDER BY timestamp DESC;"""
-            
-            print(f"Executing query: {sql} with params: {params}")
-            cursor.execute(sql, params)
-            return cursor.fetchall()
-            
-        except sqlite3.Error as e:
-            print(f"Error retrieving messages: {e}")
-            return []
-        finally:
-            if conn:
-                conn.close()
-
                 
     def get_user_uuid(self, username: str) -> tuple[bool, str, str]:
         """
@@ -154,7 +131,7 @@ class MessageDatabase:
             conn = self.connect()
             if conn is None:
                 return False, "Database connection failed", ""
-
+            
             cursor = conn.cursor()
             cursor.execute("SELECT userid FROM users WHERE username = ?", (username,))
             user = cursor.fetchone()
@@ -173,13 +150,7 @@ class MessageDatabase:
 
     def get_associated_socket(self, user_uuid: str) -> Optional[str]:
         """
-        Get the associated socket for a user by their UUID.
-        
-        Args:
-            user_uuid: The user's UUID
-            
-        Returns:
-            str or None: The associated socket if user exists, None otherwise
+        Get the associated socket (or None) for a user by their UUID.
         """
         try:
             conn = self.connect()
@@ -232,54 +203,41 @@ class MessageDatabase:
             if conn:
                 conn.close()
 
-    def search_accounts(self, search_term: str, offset: int) -> tuple[list[dict], int]:
+    def search_accounts(self, search_term: str, offset: int):
         """
         Search for user accounts with pagination.
         Returns (list of user dictionaries, total count of matching users)
         """
         try:
-            print(f"\nSearching for term: '{search_term}' offset {offset}")
+            print(f"\nDB Searching for term: '{search_term}' offset {offset}")
             conn = self.connect()
             if conn is None:
                 print("Database connection failed")
                 return [], 0
                 
-            conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
+
+            # Convert search term to lowercase
+            search_term = search_term.lower()
             
             # First get total count
-            if search_term == "":
-                count_sql = "SELECT COUNT(*) as total FROM users"
-                cursor.execute(count_sql)
-            else:
-                count_sql = "SELECT COUNT(*) as total FROM users WHERE username LIKE '%' || ? || '%'"
-                cursor.execute(count_sql, (search_term,))
+            count_sql = "SELECT COUNT(*) FROM users WHERE username LIKE '%' || ? || '%'"
+            cursor.execute(count_sql, (search_term,))
             
-            total_count = cursor.fetchone()["total"]
+            total_count = cursor.fetchone()[0]
             print(f"Total matching users: {total_count}")
             
             # Get paginated results
-            if search_term == "":
-                search_sql = """
-                    SELECT userid, username 
-                    FROM users 
-                    ORDER BY username ASC
-                    LIMIT 10 OFFSET ?
-                """
-                print(f"\nExecuting SQL to get users (limit 10, offset {offset})")
-                cursor.execute(search_sql, (offset,))
-            else:
-                search_sql = """
+            search_sql = """
                     SELECT userid, username 
                     FROM users 
                     WHERE username LIKE '%' || ? || '%'
                     ORDER BY username ASC
                     LIMIT 10 OFFSET ?
                 """
-                print(f"\nExecuting SQL to search for '{search_term}'")
-                cursor.execute(search_sql, (search_term, offset))
+            cursor.execute(search_sql, (search_term, offset))
             
-            results = [dict(row) for row in cursor.fetchall()]
+            results = [list(row) for row in cursor.fetchall()]
             print(f"\nQuery results: {results}")
             return results, total_count
             
@@ -291,13 +249,8 @@ class MessageDatabase:
                 conn.close()
 
     def get_user_password(self, uuid: int) -> str:
-        """Get a user's password by their UUID.
-        
-        Args:
-            uuid (int): The user's UUID
-            
-        Returns:
-            str: The user's password if found, None otherwise
+        """
+        Get a user's password by their UUID.
         """
         try:
             conn = self.connect()
@@ -317,13 +270,8 @@ class MessageDatabase:
                 conn.close()
 
     def delete_user(self, uuid: int) -> bool:
-        """Delete a user by their UUID.
-        
-        Args:
-            uuid (int): The user's UUID
-            
-        Returns:
-            bool: True if successful, False otherwise
+        """
+        Delete a user by their UUID.
         """
         try:
             conn = self.connect()
@@ -362,13 +310,8 @@ class MessageDatabase:
                 conn.close()
 
     def get_user_username(self, uuid: int) -> dict:
-        """Get a user's information by their UUID.
-        
-        Args:
-            uuid (int): The user's UUID
-            
-        Returns:
-            dict: The user's information if found, empty dict otherwise
+        """
+        Get a user's information by their UUID.
         """
         print(f"Getting user info for UUID: {uuid}")
         try:
@@ -396,6 +339,7 @@ class MessageDatabase:
             if conn is None:
                 return []
 
+            # get snapshot of num_messages most recent messages
             delivered_sql = """
                 SELECT DISTINCT 
                     m.msgid,
@@ -417,6 +361,7 @@ class MessageDatabase:
                 LIMIT ?;
             """
 
+            # count number of pending messages
             pending_sql = """
                 SELECT 
                     COUNT(*)
@@ -426,7 +371,6 @@ class MessageDatabase:
                     status = 'pending' 
                     AND (recipientuuid = ?);
             """
-            conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
             cursor.execute(delivered_sql, (user_uuid, user_uuid, num_messages))
             messages = cursor.fetchall()
@@ -434,7 +378,7 @@ class MessageDatabase:
             cursor.execute(pending_sql, (user_uuid,))
             pending = cursor.fetchone()[0]
             print("pending: ", pending)
-            return [dict(message) for message in messages], pending
+            return [list(message) for message in messages], pending
             
         except sqlite3.Error as e:
             print(f"Error loading messages: {e}")
@@ -444,6 +388,7 @@ class MessageDatabase:
                 conn.close()
 
     def load_page_data(self, user_uuid):
+        """For initial load of the data for the main page."""
         messages, num_pending = self.load_messages(user_uuid, 10)
         accounts, total_count = self.search_accounts("", 0)
         return messages, num_pending, accounts, total_count
@@ -455,7 +400,7 @@ class MessageDatabase:
             if conn is None:
                 return 0
 
-            print("MESSAGE IDS:", msg_ids)
+            # run deletions
             cursor = conn.cursor()
             for msg_id in msg_ids:
                 cursor.execute("DELETE FROM messages WHERE msgid = ?", (msg_id,))

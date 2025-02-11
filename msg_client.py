@@ -19,8 +19,12 @@ class Message:
         self._header_len = None
         self.header = None
         self.response = None
-        self.protocol_mode = "custom"
+        self.protocol_mode = "custom" # "json" or "custom"
         self.custom_protocol = CustomProtocol()
+
+        # validate protocol_mode: if unknown protocol, do not assume
+        if self.protocol_mode not in ["json", "custom"]:
+            return ValueError(f"Invalid protocol mode {self.protocol_mode!r}.")
 
     def _set_selector_events_mask(self, mode):
         """Set selector to listen for events: mode is 'r', 'w', or 'rw'."""
@@ -35,6 +39,7 @@ class Message:
         self.selector.modify(self.sock, events, data=self)
 
     def _read(self):
+        """Read from the socket."""
         try:
             # Should be ready to read
             data = self.sock.recv(4096)
@@ -48,6 +53,7 @@ class Message:
                 raise RuntimeError("Peer closed.")
 
     def _write(self):
+        """Write to the socket."""
         print("_write")
         if self._send_buffer:
             print(f"Sending {self._send_buffer!r} to {self.addr}")
@@ -65,11 +71,12 @@ class Message:
                     self.request = None
                     self.response_created = False
 
-    # TODO: add fns for custom protocol
     def _json_encode(self, obj, encoding):
+        """Encode a Python object as JSON and encode to bytes."""
         return json.dumps(obj, ensure_ascii=False).encode(encoding)
 
     def _json_decode(self, json_bytes, encoding):
+        """Decode JSON bytes to a Python object."""
         tiow = io.TextIOWrapper(
             io.BytesIO(json_bytes), encoding=encoding, newline=""
         )
@@ -81,23 +88,19 @@ class Message:
     def _create_message(
         self, *, content_bytes, action, content_length
     ):
-        # TODO: rethink header
+        """Create a message with header and content."""
         header = {
             "content-length": content_length,
             "action": action,
         }
+        # Serialize the header
         if self.protocol_mode == "json":
             header_bytes = self._json_encode(header, "utf-8")
-        # header_bytes = self._json_encode(header, "utf-8")
         elif self.protocol_mode == "custom":
-            print(94)
             checksum = self.custom_protocol.compute_checksum(content_bytes)
-            print(96, checksum)
             header["checksum"] = checksum
             header_bytes = self.custom_protocol.serialize(header)
-            print(97, header_bytes)
-        else:
-            raise ValueError(f"Invalid protocol mode {self.protocol_mode!r}.")
+
         # Pack version (1 byte) and header length (2 bytes)
         message_hdr = struct.pack(">BH", 1, len(header_bytes))
         message = message_hdr + header_bytes + content_bytes
@@ -105,6 +108,7 @@ class Message:
         return message
 
     def process_events(self, mask):
+        """Process selector events (step 1 of processing)"""
         if mask & selectors.EVENT_READ:
             print("read")
             self.read()
@@ -113,6 +117,7 @@ class Message:
             self.write()
 
     def read(self):
+        """Read response pipeline"""
         self._read()
         print(f"Read data from {self.addr}: {self._recv_buffer!r}")
 
@@ -130,6 +135,7 @@ class Message:
                 self.process_response()
 
     def write(self):
+        """Write request pipeline"""
         if not self._request_queued:
             self.queue_request()
 
@@ -141,6 +147,7 @@ class Message:
                 self._set_selector_events_mask("r")
 
     def close(self):
+        """Close the socket connection."""
         print(f"Closing connection to {self.addr}")
         try:
             self.selector.unregister(self.sock)
@@ -158,19 +165,20 @@ class Message:
             # Delete reference to socket object for garbage collection
             self.sock = None
 
-    # TODO: change/add custom protocol
     def queue_request(self):
+        """Prepare a request to be sent to the server."""
         print("queue_request")
         # Reset state before queuing a new request
         self.reset_state()
         
+        # Serialize the content
         if self.protocol_mode == "json":
             content = self._json_encode(self.request["content"], "utf-8")
         elif self.protocol_mode == "custom":
             print(166, self.request["content"])
             content = self.custom_protocol.serialize(self.request["content"])
-        else:
-            raise ValueError(f"Invalid protocol mode {self.protocol_mode!r}.")
+        
+        # Create the message
         action = self.request["action"]
         req = {
             "content_bytes": content,
@@ -183,6 +191,7 @@ class Message:
         self._request_queued = True
 
     def process_protoheader(self):
+        """Process the protocol header (read pipeline step 1)."""
         print("process_protoheader")
         version_len = 1  # 1 byte for version
         hdrlen = 2  # fixed length for header length
@@ -206,7 +215,9 @@ class Message:
             self._recv_buffer = self._recv_buffer[hdrlen:]
 
     def process_header(self):
+        """Process the header (read pipeline step 2)."""
         hdrlen = self._header_len
+        # deserialize header
         if len(self._recv_buffer) >= hdrlen:
             if self.protocol_mode == "json":
                 self.header = self._json_decode(
@@ -216,10 +227,8 @@ class Message:
                 self.header = self.custom_protocol.deserialize(
                     self._recv_buffer[:hdrlen], "header"
                 )
-            else:
-                raise ValueError(
-                    f"Invalid protocol mode {self.protocol_mode!r}."
-                )
+            
+            # verify header
             print(f"JSON header: {self.header!r}")
             self._recv_buffer = self._recv_buffer[hdrlen:]
             for reqhdr in (
@@ -238,8 +247,10 @@ class Message:
         self._recv_buffer = b""
 
     def process_response(self):
+        """Process the response (read pipeline step 3)."""
         content_len = self.header["content-length"]
         print(f"len of buffer: {len(self._recv_buffer)}; Content length: {content_len}")
+        # Check if the full response is in the buffer
         if not len(self._recv_buffer) >= content_len:
             return
         data = self._recv_buffer[:content_len]
@@ -248,6 +259,7 @@ class Message:
         action = self.header["action"]
         
         try:
+            # Decode the response
             if self.protocol_mode == "json":
                 decoded_response = self._json_decode(data, "utf-8")
             elif self.protocol_mode == "custom":
@@ -256,12 +268,11 @@ class Message:
                 computed_checksum = self.custom_protocol.compute_checksum(data)
                 if computed_checksum != self.header["checksum"]:
                     action = "error"
-            else:
-                raise ValueError(f"Invalid protocol mode {self.protocol_mode!r}.")
             print(f"Decoded response: {decoded_response}")
             self.response = decoded_response
+            # Server response in gui
             self.gui.handle_server_response(decoded_response, action)
-            # Reset state after successfully processing the response
+            # Done reading, reset Message class for next message
             self.reset_state()
         except Exception as e:
             print(f"Error decoding response: {e}")
