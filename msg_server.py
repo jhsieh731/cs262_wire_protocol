@@ -10,6 +10,21 @@ from logger import set_logger
 
 server_logger = set_logger("msg_server", "server.log")
 
+# Set up logging
+server_logger = logging.getLogger('msg_server')
+server_logger.setLevel(logging.INFO)
+
+# Create file handler
+fh = logging.FileHandler('msg_server_log.txt')
+fh.setLevel(logging.INFO)
+
+# Create formatter
+formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+fh.setFormatter(formatter)
+
+# Add handler to logger
+server_logger.addHandler(fh)
+
 db = MessageDatabase()
 
 class Message:
