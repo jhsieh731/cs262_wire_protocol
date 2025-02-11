@@ -193,7 +193,7 @@ class Message:
             
             # Get recipient's UUID
             success_status, error_msg, recipient_uuid = db.get_user_uuid(recipient_username)
-            if success:
+            if success_status:
                 # Get recipient's associated socket
                 recipient_socket = db.get_associated_socket(recipient_uuid)
                 sender_username = db.get_user_username(sender_uuid)
