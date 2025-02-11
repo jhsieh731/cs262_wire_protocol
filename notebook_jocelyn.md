@@ -46,6 +46,8 @@ Header:
 
 2/6/25-2/9/25: Oops! I literally had the flu and a high grade fever, but don't worry I still made progress on this project because the grind never stops (even on your deathbed). Hooray. 
 
+2/10/25: added config file for server, decided not to change how load responses works (so as to reduce response size as you load inevitably more). This is because it would lead to unclear handling of num_messages depending on where you call load_messages. If I have time I might just add another function to resolve this. Update timestamps when message status changes to delivered from pending. Redesign protocols to remove keys (much smaller). Move "response_type" to be "action" instead. Separate gui from client file. Refactor _create_response in msg_server (again) for cleaner code.
+
 
 jsonheader: 
 "version"
@@ -67,7 +69,7 @@ actions:
 content:
 "uuid"
 "search_term"
-"current_page"
+"offset"
 "msgids"
 "num_messages"
 "sender_uuid"
@@ -76,6 +78,16 @@ content:
 "timestamp"
 "username"
 "password"
+"messages"
+"num_pending"
+"accounts"
+"total_count"
+"success"
+"error"
+"sender_username"
+
+
+
 
 
 Should we forcibly try to determine whether an incoming request is json or custom & then match it? 

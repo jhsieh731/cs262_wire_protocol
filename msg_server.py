@@ -4,18 +4,12 @@ import selectors
 import struct
 import sys
 from database import MessageDatabase
-from custom_protocol import CustomProtocol
+from custom_protocol_2 import CustomProtocol
 
 db = MessageDatabase()
 
-request_search = {
-    "morpheus": "Follow the white rabbit. \U0001f430",
-    "ring": "In the caves beneath the Misty Mountains. \U0001f48d",
-    "\U0001f436": "\U0001f43e Playing ball! \U0001f3d0",
-}
-
 class Message:
-    def __init__(self, selector, sock, addr):
+    def __init__(self, selector, sock, addr, accepted_versions):
         self.selector = selector
         self.sock = sock
         self.addr = addr
@@ -27,6 +21,7 @@ class Message:
         self.response_created = False
         self.protocol_mode = "custom"
         self.custom_protocol = CustomProtocol()
+        self.accepted_versions = accepted_versions
 
     def _set_selector_events_mask(self, mode):
         """Set selector to listen for events: mode is 'r', 'w', or 'rw'."""
@@ -82,14 +77,11 @@ class Message:
         obj = json.load(tiow)
         tiow.close()
         return obj
-    
-    # TODO: implement custom encode/decodes according to our protocol
 
     def _create_message(
         self, *, content_bytes, action, content_length
     ):
         header = {
-            "version": 1,
             "content-length": content_length,
             "action": action,
         }
@@ -105,37 +97,52 @@ class Message:
         message_hdr = struct.pack(">BH", 1, len(header_bytes))
         message = message_hdr + header_bytes + content_bytes
         return message
+    
+    def check_fields(self, action, request):
+        fields = self.custom_protocol.dict_reconstruction.get(action)
+        if not fields:
+            return False
+        for field in fields:
+            if field not in request:
+                return False
+            if request.get(field) is None:
+                return False
+        return True
 
     def _create_response_content(self):
         # First decode the request content
         if self.protocol_mode == "json":
             request_content = self._json_decode(self.request, "utf-8")
         elif self.protocol_mode == "custom":
-            request_content = self.custom_protocol.deserialize(self.request)
+            request_content = self.custom_protocol.deserialize(self.request, self.header["action"])
             computed_checksum = self.custom_protocol.compute_checksum(self.request)
-            if computed_checksum != self.header.get("checksum", None):
+            if computed_checksum != self.header.get("checksum") or not request_content:
                 self.header["action"] = "error"
 
+        # Check fields in request are there
+        if not self.check_fields(self.header["action"], request_content):
+            self.header["action"] = "error"
+
         response_content = {}
+        action = "error"
         print("action: ", self.header["action"])
-        # TODO: switch statements here
         # Create response content and encode it
         if self.header["action"] == "login_register":
             # try to login
-            accounts = db.login_or_create_account(request_content["username"], request_content["password"], str(self.addr))
+            accounts = db.login_or_create_account(request_content.get("username"), request_content.get("password"), str(self.addr))
             print("account: ", accounts)
             if (len(accounts) != 1):
                 response_content = {
-                    "response": "Invalid username or password",
-                    "response_type": "error"
+                    "message": "Invalid username or password",
                 }
+                action = "login_error"
             else:
                 response_content = {
                     "uuid": accounts[0]["userid"],
-                    "response_type": "login_register"
                 }
+                action = "login_register_r"
         elif self.header["action"] == "load_page_data":
-            user_uuid = request_content.get("uuid", None)
+            user_uuid = request_content.get("uuid")
 
             # Load page data
             messages, num_pending, accounts, total_count = db.load_page_data(user_uuid)
@@ -146,38 +153,35 @@ class Message:
                 "num_pending": num_pending,
                 "accounts": accounts,
                 "total_count": total_count,
-                "response_type": "load_page_data"
             }
+            action = "load_page_data_r"
 
         elif self.header["action"] == "search_accounts":
             search_term = request_content.get("search_term", "")
-            current_page = request_content.get("current_page", 0)
-            accounts_per_page = 10
-            print(f"Searching for accounts with term: {search_term} (page {current_page}, per_page {accounts_per_page})")
+            offset = request_content.get("offset", 0)
             
             # Search for accounts with pagination
-            accounts, total_count = db.search_accounts(search_term, current_page, accounts_per_page)
+            accounts, total_count = db.search_accounts(search_term, offset)
             print(f"Found {len(accounts)} accounts (total: {total_count})")
             
             response_content = {
                 "accounts": accounts,
                 "total_count": total_count,
-                "response_type": "search_accounts"
             }
+            action = "search_accounts_r"
         elif self.header["action"] == "load_messages":
-            user_uuid = request_content.get("uuid", None)
-            num_messages = request_content.get("num_messages", None)
+            user_uuid = request_content.get("uuid")
+            num_messages = request_content.get("num_messages")
             print(f"Loading messages for user {user_uuid} and num_messages {num_messages}")
             
-            # Load messages with pagination
             messages, total_undelivered = db.load_messages(user_uuid, num_messages)
             print(f"Found {len(messages)} messages (total: {total_undelivered})")
             
             response_content = {
                 "messages": messages,
-                "total_undelivered": total_undelivered,
-                "response_type": "load_messages"
+                "total_count": total_undelivered,
             }
+            action = "load_messages_r"
         elif self.header["action"] == "send_message":
             # Extract message details
             sender_uuid = request_content.get("uuid")
@@ -187,79 +191,64 @@ class Message:
 
             print("message details: ", sender_uuid, recipient_username, message_text, timestamp)
             
-            if not all([sender_uuid, recipient_username, message_text, timestamp]):
-                response_content = {
-                    "success": False,
-                    "error": "Missing required fields",
-                    "response_type": "send_message"
-                }
-            else:
-                # Get recipient's UUID
-                success, error, recipient_uuid = db.get_user_uuid(recipient_username)
-                if not success:
-                    response_content = {
-                        "success": False,
-                        "error": error,
-                        "response_type": "send_message"
-                    }
-                else:
-                    # Get recipient's associated socket
-                    recipient_socket = db.get_associated_socket(recipient_uuid)
-
-                    sender_username = db.get_user_username(sender_uuid)
-                    print(sender_username)
-                    
+            # Get recipient's UUID
+            success_status, error_msg, recipient_uuid = db.get_user_uuid(recipient_username)
+            if success:
+                # Get recipient's associated socket
+                recipient_socket = db.get_associated_socket(recipient_uuid)
+                sender_username = db.get_user_username(sender_uuid)
+                print(sender_username)
+                
+                # ensure all fields are there
+                if recipient_socket and sender_username:
+                    # recipient online?
                     status = False
-                    
-                    # ensure all fields are there
-                    if recipient_socket and sender_username:
-                        # Create message content for recipient
-                        relay_content = {
-                            "message": message_text,
-                            "sender_uuid": sender_uuid,
-                            "sender_username": sender_username,
-                            "response_type": "receive_message"
-                        }
-                        
-                        # Convert content to bytes for sending
-                        if self.protocol_mode == "json":
-                            relay_content_bytes = self._json_encode(relay_content, "utf-8")
-                        elif self.protocol_mode == "custom":
-                            relay_content_bytes = self.custom_protocol.serialize(relay_content)
-                        else:
-                            raise ValueError(f"Invalid protocol mode {self.protocol_mode!r}")
-                        relay_message = self._create_message(
-                            content_bytes=relay_content_bytes,
-                            action="receive_message",
-                            content_length=len(relay_content_bytes)
-                        )
-                        
-                        # Send message to recipient's socket
-                        try:
-                            # Find the socket object associated with the recipient
-                            for key, data in self.selector.get_map().items():
-                                if data.data and isinstance(data.data, Message) and str(data.data.addr) == recipient_socket:
-                                    print(f"Relaying message to {recipient_socket}")
-                                    status = True
-                                    data.data._send_buffer += relay_message
-                                    data.data._set_selector_events_mask("w")
-                                    break
-                            else:
-                                print(f"Error: Could not find recipient socket {recipient_socket}")
-                                status = False
-                        except Exception as e:
-                            print(f"Error relaying message: {e}")
 
-                    # Store the message
-                    success, error = db.store_message(sender_uuid, recipient_uuid, message_text, status, timestamp)
-                    
-                    # Create response for sender
-                    response_content = {
-                        "success": success,
-                        "error": error,
-                        "response_type": "send_message",
-                        "delivered": bool(recipient_socket)
+                    # Create message content for recipient
+                    relay_content = {
+                        "message": message_text,
+                        "sender_uuid": sender_uuid,
+                        "sender_username": sender_username,
                     }
+                    
+                    # Convert content to bytes for sending
+                    if self.protocol_mode == "json":
+                        relay_content_bytes = self._json_encode(relay_content, "utf-8")
+                    elif self.protocol_mode == "custom":
+                        relay_content_bytes = self.custom_protocol.serialize(relay_content)
+                    else:
+                        raise ValueError(f"Invalid protocol mode {self.protocol_mode!r}")
+                    relay_message = self._create_message(
+                        content_bytes=relay_content_bytes,
+                        action="receive_message",
+                        content_length=len(relay_content_bytes)
+                    )
+                    
+                    # Send message to recipient's socket
+                    try:
+                        # Find the socket object associated with the recipient
+                        for key, data in self.selector.get_map().items():
+                            if data.data and isinstance(data.data, Message) and str(data.data.addr) == recipient_socket:
+                                print(f"Relaying message to {recipient_socket}")
+                                status = True
+                                data.data._send_buffer += relay_message
+                                data.data._set_selector_events_mask("w")
+                                break
+                        else:
+                            print(f"Error: Could not find recipient socket {recipient_socket}")
+                            status = False
+                    except Exception as e:
+                        print(f"Error relaying message: {e}")
+
+                # Store the message
+                success_status, error_msg = db.store_message(sender_uuid, recipient_uuid, message_text, status, timestamp)
+                    
+            # Create response for sender
+            response_content = {
+                "success": success_status,
+                "error": error_msg,
+            }
+            action = "send_message_r"
         elif self.header["action"] == "load_undelivered":
             user_uuid = request_content.get("uuid", None)
             num_messages = request_content.get("num_messages", 0)
@@ -271,17 +260,17 @@ class Message:
             
             response_content = {
                 "messages": messages,
-                "response_type": "load_undelivered"
             }
+            action = "load_undelivered_r"
         elif self.header["action"] == "delete_messages":
             print("Deleting messages")
             msg_ids = request_content.get("msgids", [])
             num_deleted = db.delete_messages(msg_ids)
             print(f"db delete_messages ran")
             response_content = {
-                "response_type": "delete_messages",
-                "num_deleted": num_deleted,
+                "total_count": num_deleted,
             }
+            action = "delete_messages_r"
         elif self.header["action"] == "delete_account":
             user_uuid = request_content.get("uuid")
             password = request_content.get("password")
@@ -289,39 +278,31 @@ class Message:
             # Get the stored password from database
             stored_password = db.get_user_password(user_uuid)
             print(f"Retrieved stored password: {'Found' if stored_password else 'Not found'}")
-            
-            if stored_password and stored_password == password:
+            success = False
+            error_message = ""
+            if stored_password == password:
                 # Password matches, delete the account
                 if db.delete_user(user_uuid):
-                    response_content = {
-                        "response_type": "delete_account",
-                        "success": True,
-                        "error": "",
-                    }
+                    success = True
                 else:
-                    response_content = {
-                        "response_type": "delete_account",
-                        "success": False,
-                        "error":  "Failed to delete account",
-                    }
+                    error_message = "Failed to delete account"
             else:
-                response_content = {
-                    "response_type": "delete_account",
-                    "success": False,
-                    "error": "Incorrect password",
-                }
+                error_message = "Incorrect password"
+            response_content = {
+                "success": success,
+                "error": error_message,
+            }
+            action = "delete_account_r"
         elif self.header["action"] == "error":
             response_content = {
-                "response_type": "error",
                 "error": f"An error occurred. Please try again."
             }
+            action = "error"
         else:
             response_content = {
-                "response_type": "error",
                 "error": f"Invalid action: {self.header['action']}"
             }
-
-            self.header["action"] = "error"
+            action = "error"
             
         if self.protocol_mode == "json":
             content_bytes = self._json_encode(response_content, "utf-8")
@@ -330,7 +311,7 @@ class Message:
             
         response = {
             "content_bytes": content_bytes,
-            "action": "response",
+            "action": action,
             "content_length": len(content_bytes)
         }
         return response
@@ -391,7 +372,7 @@ class Message:
         # First check version
         if len(self._recv_buffer) >= version_len:
             version = struct.unpack(">B", self._recv_buffer[:version_len])[0]
-            if version != 1:
+            if version not in self.accepted_versions:
                 raise ValueError(f"Cannot handle protocol version {version}")
             self._recv_buffer = self._recv_buffer[version_len:]
         else:
@@ -412,7 +393,7 @@ class Message:
                     self._recv_buffer[:hdrlen], "utf-8"
                 )
             elif self.protocol_mode == "custom":
-                self.header = self.custom_protocol.deserialize(self._recv_buffer[:hdrlen])
+                self.header = self.custom_protocol.deserialize(self._recv_buffer[:hdrlen], "header")
             else:
                 raise ValueError(f"Invalid protocol mode {self.protocol_mode!r}")
             self._recv_buffer = self._recv_buffer[hdrlen:]
