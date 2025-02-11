@@ -10,7 +10,7 @@ client_logger = logging.getLogger('msg_client')
 client_logger.setLevel(logging.INFO)
 
 # Create file handler
-fh = logging.FileHandler('msg_client_log.txt')
+fh = logging.FileHandler('msg_client.log')
 fh.setLevel(logging.INFO)
 
 # Create formatter
@@ -37,6 +37,7 @@ class Message:
         self.response = None
         self.protocol_mode = "custom" # "json" or "custom"
         self.custom_protocol = CustomProtocol()
+        self.version = 1
 
         # validate protocol_mode: if unknown protocol, do not assume
         if self.protocol_mode not in ["json", "custom"]:
@@ -116,9 +117,9 @@ class Message:
             checksum = self.custom_protocol.compute_checksum(content_bytes)
             header["checksum"] = checksum
             header_bytes = self.custom_protocol.serialize(header)
-
         # Pack version (1 byte) and header length (2 bytes)
-        message_hdr = struct.pack(">BH", 1, len(header_bytes))
+        protocol_num = 0 if self.protocol_mode == "json" else 1
+        message_hdr = struct.pack(">BBH", self.version, protocol_num, len(header_bytes))
         message = message_hdr + header_bytes + content_bytes
         print(f"Created message: {message!r}")
         return message
@@ -210,14 +211,20 @@ class Message:
         """Process the protocol header (read pipeline step 1)."""
         print("process_protoheader")
         version_len = 1  # 1 byte for version
+        protocol_len = 1  # 1 byte for protocol type
         hdrlen = 2  # fixed length for header length
         
         # First check version
-        if len(self._recv_buffer) >= version_len:
+        if len(self._recv_buffer) >= (version_len + protocol_len):
             version = struct.unpack(">B", self._recv_buffer[:version_len])[0]
-            if version != 1:
+            if version != self.version:
                 raise ValueError(f"Cannot handle protocol version {version}")
             self._recv_buffer = self._recv_buffer[version_len:]
+            server_protocol_num = struct.unpack(">B", self._recv_buffer[:protocol_len])[0]
+            server_protocol = "json" if server_protocol_num == 0 else "custom"
+            if server_protocol != self.protocol_mode:
+                raise ValueError(f"Cannot handle protocol type {server_protocol_num}")
+            self._recv_buffer = self._recv_buffer[protocol_len:]
         else:
             return
             

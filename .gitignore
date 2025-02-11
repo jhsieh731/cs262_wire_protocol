@@ -17,3 +17,4 @@ env/
 *.swp
 .DS_Store
 262_wire/
+*.log
