@@ -19,9 +19,13 @@ class Message:
         self.header = None
         self.request = None
         self.response_created = False
-        self.protocol_mode = "custom"
+        self.protocol_mode = "custom" # "json" or "custom", must be set before use
         self.custom_protocol = CustomProtocol()
         self.accepted_versions = accepted_versions
+
+        # validate protocol_mode: if unknown protocol, do not assume
+        if self.protocol_mode not in ["json", "custom"]:
+            return ValueError(f"Invalid protocol mode {self.protocol_mode!r}.")
 
     def _set_selector_events_mask(self, mode):
         """Set selector to listen for events: mode is 'r', 'w', or 'rw'."""
@@ -36,6 +40,7 @@ class Message:
         self.selector.modify(self.sock, events, data=self)
 
     def _read(self):
+        """Read from the client socket"""
         try:
             # Should be ready to read
             data = self.sock.recv(4096)
@@ -49,6 +54,7 @@ class Message:
                 raise RuntimeError("Peer closed.")
 
     def _write(self):
+        """Write to the client socket"""
         if self._send_buffer:
             print(f"Sending {self._send_buffer!r} to {self.addr}")
             try:
@@ -68,9 +74,11 @@ class Message:
                     self._set_selector_events_mask("r")
 
     def _json_encode(self, obj, encoding):
+        """Encode a JSON object and return bytes"""
         return json.dumps(obj, ensure_ascii=False).encode(encoding)
 
     def _json_decode(self, json_bytes, encoding):
+        """Decode JSON bytes and return a Python object"""
         tiow = io.TextIOWrapper(
             io.BytesIO(json_bytes), encoding=encoding, newline=""
         )
@@ -81,6 +89,7 @@ class Message:
     def _create_message(
         self, *, content_bytes, action, content_length
     ):
+        """Create a message with the given content"""
         header = {
             "version": 1,
             "content-length": content_length,
@@ -92,14 +101,14 @@ class Message:
             checksum = self.custom_protocol.compute_checksum(content_bytes)
             header["checksum"] = checksum
             header_bytes = self.custom_protocol.serialize(header)
-        else:
-            raise ValueError(f"Invalid protocol mode {self.protocol_mode!r}")
+        
         # Pack version (1 byte) and header length (2 bytes)
         message_hdr = struct.pack(">BH", 1, len(header_bytes))
         message = message_hdr + header_bytes + content_bytes
         return message
     
     def check_fields(self, action, request):
+        """Check if all required fields are present in the request"""
         fields = self.custom_protocol.dict_reconstruction.get(action)
         if not fields:
             return False
@@ -111,6 +120,7 @@ class Message:
         return True
 
     def _create_response_content(self):
+        """Create response content based on the request"""
         # First decode the request content
         if self.protocol_mode == "json":
             request_content = self._json_decode(self.request, "utf-8")
@@ -134,7 +144,7 @@ class Message:
             print("account: ", accounts)
             if (len(accounts) != 1):
                 response_content = {
-                    "message": "Invalid username or password",
+                    "message": "Please try again",
                 }
                 action = "login_error"
             else:
@@ -217,8 +227,7 @@ class Message:
                         relay_content_bytes = self._json_encode(relay_content, "utf-8")
                     elif self.protocol_mode == "custom":
                         relay_content_bytes = self.custom_protocol.serialize(relay_content)
-                    else:
-                        raise ValueError(f"Invalid protocol mode {self.protocol_mode!r}")
+                    
                     relay_message = self._create_message(
                         content_bytes=relay_content_bytes,
                         action="receive_message",
@@ -255,7 +264,7 @@ class Message:
             num_messages = request_content.get("num_messages", 0)
             print(f"Loading undelivered messages for user {user_uuid}")
             
-            # Load undelivered messages
+            # Load undelivered messages from db
             messages = db.load_undelivered(user_uuid, num_messages)
             print(f"Found {len(messages)} undelivered messages")
             
@@ -318,6 +327,7 @@ class Message:
         return response
 
     def process_events(self, mask):
+        """Process selector events (first step)"""
         if mask & selectors.EVENT_READ:
             print("read")
             self.read()
@@ -326,6 +336,7 @@ class Message:
             self.write()
 
     def read(self):
+        """Read data pipeline from the client socket (step 2 if read)"""
         self._read()
 
         if self._header_len is None:
@@ -340,6 +351,7 @@ class Message:
                 self.process_request()
 
     def write(self):
+        """Write data pipeline to the client socket (step 2 if write)"""
         if self.request:
             if not self.response_created:
                 self.create_response()
@@ -347,6 +359,7 @@ class Message:
         self._write()
 
     def close(self):
+        """Close the connection to the client socket"""
         print(f"Closing connection to {self.addr}")
         try:
             self.selector.unregister(self.sock)
@@ -365,8 +378,8 @@ class Message:
             self.sock = None
 
 
-    # TODO: rethink these two based on how we form our custom messages
     def process_protoheader(self):
+        """Process the protocol header (step 1 of read pipeline)"""
         version_len = 1  # 1 byte for version
         hdrlen = 2  # fixed length for header length
         
@@ -387,17 +400,20 @@ class Message:
             self._recv_buffer = self._recv_buffer[hdrlen:]
 
     def process_header(self):
+        """Process the header (step 2 of read pipeline)"""
         hdrlen = self._header_len
+
         if len(self._recv_buffer) >= hdrlen:
+            # Decode the header based on the protocol mode
             if self.protocol_mode == "json":
                 self.header = self._json_decode(
                     self._recv_buffer[:hdrlen], "utf-8"
                 )
             elif self.protocol_mode == "custom":
                 self.header = self.custom_protocol.deserialize(self._recv_buffer[:hdrlen], "header")
-            else:
-                raise ValueError(f"Invalid protocol mode {self.protocol_mode!r}")
+            
             self._recv_buffer = self._recv_buffer[hdrlen:]
+            # check minimum required fields are present
             for reqhdr in (
                 "content-length",
                 "action",
@@ -411,13 +427,13 @@ class Message:
             return
         data = self._recv_buffer[:content_len]
         self._recv_buffer = self._recv_buffer[content_len:]
-        # The data is already JSON encoded, store it as is
         self.request = data
         print(f"Stored request data: {self.request!r}")
         # Set selector to listen for write events, we're ready to respond
         self._set_selector_events_mask("w")
 
     def create_response(self):
+        """Create a response based on the request"""
         response = self._create_response_content()
         message = self._create_message(**response)
         self.response_created = True

@@ -23,6 +23,8 @@ class CustomProtocol:
             "username",
             "uuid",
         ]
+
+        # defines order in which fields appear after listifying request types (alphabetical)
         self.dict_reconstruction = {
             "header": ["action", "content-length", "checksum"],
             "load_page_data": ["uuid"],
@@ -74,6 +76,7 @@ class CustomProtocol:
     def serialize(self, dictionary):
         """Serialize a dictionary to a stringified list."""
         res = []
+        # fields inserted in list in alphabetical order
         for key in self.keys:
             if key in dictionary:
                 res.append(CustomProtocol.serialize_part(dictionary[key]))
@@ -111,6 +114,7 @@ class CustomProtocol:
         # decode from utf-8
         data_string = data.decode("utf-8")
 
+        # return to list form
         lst = CustomProtocol.deserialize_part(data_string)
         fields = self.dict_reconstruction.get(action)
 
@@ -160,6 +164,7 @@ class CustomProtocol:
     
     @staticmethod
     def _is_number(value):
+        """Checks if a string represents a number."""
         if value.startswith("-"):
                 value = value[1:]
         return value.replace(".", "", 1).isdigit()

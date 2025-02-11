@@ -35,6 +35,12 @@ class ClientGUI:
             widget.destroy()
         frame.pack_forget()
     
+    # ===================================================================
+    # ===================================================================
+    # GUI PAGES
+    # ===================================================================
+    # ===================================================================
+
     def create_error_page(self, error_message):
         self.clear_frame(self.login_frame)
         self.clear_frame(self.chat_frame)
@@ -151,151 +157,7 @@ class ClientGUI:
         # Load initial data
         self.load_page_data()
 
-
-    def hash_password(self, password):
-        """Hashes a password using SHA-256."""
-        password_bytes = password.encode('utf-8')
-        sha_hash = hashlib.sha256(password_bytes)
-        return sha_hash.hexdigest()
     
-    def load_page_data(self):
-        request = {
-            "action": "load_page_data",
-            "content": {"uuid": self.user_uuid},
-        }
-        self.thread_send(request)
-
-    def search_accounts(self):
-        search_term = self.search_bar.get()
-        request = {
-            "action": "search_accounts",
-            "content": {"search_term": search_term, "offset": self.current_page * 10},
-        }
-        self.thread_send(request)
-
-    def prev_page(self):
-        if self.current_page > 0:
-            self.current_page -= 1
-            self.search_accounts()
-
-    def next_page(self):
-        if self.current_page < self.max_accounts_page:
-            self.current_page += 1
-            self.search_accounts()
-
-    def on_account_select(self, event):
-        selection = event.widget.curselection()
-        if selection:
-            index = selection[0]
-            self.selected_account = event.widget.get(index)
-            self.update_message_input_area()
-
-    def update_message_input_area(self):
-        self.message_display.config(state=tk.NORMAL)
-        self.message_display.delete(1.0, tk.END)
-        self.message_display.insert(tk.END, f"Send message to {self.selected_account}\n")
-        self.message_display.config(state=tk.DISABLED)
-
-    def delete_messages(self):
-        selected_indices = self.messages_listbox.curselection()
-        selected_msgids = [self.msgid_map[i] for i in selected_indices if i in self.msgid_map]
-        request = {
-            "action": "delete_messages",
-            "content": {"msgids": selected_msgids},
-        }
-        self.thread_send(request)
-
-    def load_undelivered_messages(self):
-        num_messages = int(self.num_messages_entry.get())
-        if num_messages < 1 or num_messages > int(self.num_undelivered):
-            return
-        request = {
-            "action": "load_undelivered",
-            "content": {"num_messages": num_messages, "uuid": self.user_uuid},
-        }
-        self.thread_send(request)
-
-    def load_more_messages(self):
-        self.num_messages += 10
-        self.load_messages()
-        
-
-    def load_messages(self):
-        num_messages = self.num_messages
-        print(f"Loading {num_messages} messages")
-        request = {
-            "action": "load_messages",
-            "content": {"num_messages": num_messages, "uuid": self.user_uuid},
-        }
-        self.thread_send(request)
-
-    def update_accounts_list(self, accounts):
-        self.accounts_listbox.delete(0, tk.END)
-        for account in accounts:
-            # Display username in the listbox
-            self.accounts_listbox.insert(tk.END, account['username'])
-
-    def update_messages_list(self, messages, total_undelivered):
-        print(f"Updating messages list with {len(messages)} messages")
-        self.messages_listbox.delete(0, tk.END)
-        self.msgid_map.clear()  # Clear the previous mapping
-        for index, message in enumerate(messages):
-            sender = message['sender_username']
-            recipient = message['recipient_username']
-            msg_content = message['message']
-            timestamp = message['timestamp']
-            msgid = message['msgid']
-            
-            if recipient == self.username:
-                display_text = f"From {sender}: {msg_content}"
-                self.msgid_map[index] = msgid
-            else:
-                display_text = f"To {recipient}: {msg_content}"
-            
-            self.messages_listbox.insert(tk.END, display_text)
-        self.undelivered_label.config(text=f"Undelivered messages: {total_undelivered}")
-
-    def send_message(self):
-            msg = self.entry.get()
-            if msg and self.selected_account:
-                print(f"Selected account: {self.selected_account}, Message: {msg}")
-                self.entry.delete(0, tk.END)
-                request = {
-                    "action": "send_message",
-                    "content": {"uuid": self.user_uuid, "recipient_username": self.selected_account, "message": msg, "timestamp": datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')},
-                }
-                self.thread_send(request)
-
-    def login_register(self):
-        username = self.username_entry.get()
-        password = self.password_entry.get()
-        if username and password:
-            self.send_login_register_request(username, password)
-
-    def send_login_register_request(self, username, password):
-        request = {
-            "action": "login_register",
-            "content": {"username": username, "password": self.hash_password(password)},
-        }
-        self.username = username
-        if not self.is_threading:
-            self.is_threading = True
-            threading.Thread(target=lambda: self.network_thread(request), daemon=True).start()
-        else:
-            self.thread_send(request)
-
-
-    def delete_account(self):
-        password = self.dialog_password_entry.get()
-        request = {
-            "action": "delete_account",
-            "content": {
-                "uuid": self.user_uuid,
-                "password": self.hash_password(password),
-            }
-        }
-        self.thread_send(request)
-
 
     def create_confirm_delete_account(self):
         # Create a dialog window
@@ -323,6 +185,179 @@ class ClientGUI:
         cancel_button.pack(pady=5)
 
 
+
+    # ===================================================================
+    # ===================================================================
+    # Helper/User event functions
+    # ===================================================================
+    # ===================================================================
+
+    def hash_password(self, password):
+        """Hashes a password using SHA-256."""
+        password_bytes = password.encode('utf-8')
+        sha_hash = hashlib.sha256(password_bytes)
+        return sha_hash.hexdigest()
+
+    def prev_page(self):
+        if self.current_page > 0:
+            self.current_page -= 1
+            self.search_accounts()
+
+    def next_page(self):
+        if self.current_page < self.max_accounts_page:
+            self.current_page += 1
+            self.search_accounts()
+
+    def on_account_select(self, event):
+        selection = event.widget.curselection()
+        if selection:
+            index = selection[0]
+            self.selected_account = event.widget.get(index)
+            self.update_message_input_area()
+    
+    def load_more_messages(self):
+        self.num_messages += 10
+        self.load_messages()
+
+
+    def update_message_input_area(self):
+        self.message_display.config(state=tk.NORMAL)
+        self.message_display.delete(1.0, tk.END)
+        self.message_display.insert(tk.END, f"Send message to {self.selected_account}\n")
+        self.message_display.config(state=tk.DISABLED)
+
+    def update_accounts_list(self, accounts):
+        self.accounts_listbox.delete(0, tk.END)
+        for account in accounts:
+            # Display username in the listbox
+            self.accounts_listbox.insert(tk.END, account[1])
+
+    def update_messages_list(self, messages, total_undelivered):
+        print(f"Updating messages list with {len(messages)} messages")
+        self.messages_listbox.delete(0, tk.END)
+        self.msgid_map.clear()  # Clear the previous mapping
+        for index, message in enumerate(messages):
+            sender = message[1]
+            recipient = message[2]
+            msg_content = message[3]
+            timestamp = message[4]
+            msgid = message[0]
+            
+            if recipient == self.username:
+                display_text = f"From {sender}: {msg_content}"
+                self.msgid_map[index] = msgid
+            else:
+                display_text = f"To {recipient}: {msg_content}"
+            
+            self.messages_listbox.insert(tk.END, display_text)
+        self.undelivered_label.config(text=f"Undelivered messages: {total_undelivered}")
+
+    
+    # ===================================================================
+    # ===================================================================
+    # Network functions (send requests to server)
+    # ===================================================================
+    # ===================================================================
+
+    def thread_send(self, request):
+        """Send a request to the server using a separate thread to reduce GUI lag."""
+        thread = threading.Thread(target=self.send_to_server, args=(request,))
+        thread.start()
+
+    def load_page_data(self):
+        request = {
+            "action": "load_page_data",
+            "content": {"uuid": self.user_uuid},
+        }
+        self.thread_send(request)
+
+    def search_accounts(self):
+        search_term = self.search_bar.get().lower()
+        request = {
+            "action": "search_accounts",
+            "content": {"search_term": search_term, "offset": self.current_page * 10},
+        }
+        self.thread_send(request)
+
+    def delete_messages(self):
+        selected_indices = self.messages_listbox.curselection()
+        selected_msgids = [self.msgid_map[i] for i in selected_indices if i in self.msgid_map]
+        request = {
+            "action": "delete_messages",
+            "content": {"msgids": selected_msgids},
+        }
+        self.thread_send(request)
+
+    def load_undelivered_messages(self):
+        num_messages = int(self.num_messages_entry.get())
+        if num_messages < 1 or num_messages > int(self.num_undelivered):
+            return
+        request = {
+            "action": "load_undelivered",
+            "content": {"num_messages": num_messages, "uuid": self.user_uuid},
+        }
+        self.thread_send(request)
+
+
+    def load_messages(self):
+        num_messages = self.num_messages
+        print(f"Loading {num_messages} messages")
+        request = {
+            "action": "load_messages",
+            "content": {"num_messages": num_messages, "uuid": self.user_uuid},
+        }
+        self.thread_send(request)
+
+
+    def send_message(self):
+            msg = self.entry.get()
+            if msg and self.selected_account:
+                print(f"Selected account: {self.selected_account}, Message: {msg}")
+                self.entry.delete(0, tk.END)
+                # add message to the message display
+                self.message_display.config(state=tk.NORMAL)
+                self.message_display.insert(tk.END, f"{self.username}: {msg}\n")
+                self.message_display.config(state=tk.DISABLED)
+
+                request = {
+                    "action": "send_message",
+                    "content": {"uuid": self.user_uuid, "recipient_username": self.selected_account, "message": msg, "timestamp": datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')},
+                }
+                self.thread_send(request)
+
+    def login_register(self):
+        username = self.username_entry.get()
+        password = self.password_entry.get()
+        if username and password:
+            request = {
+                "action": "login_register",
+                "content": {"username": username, "password": self.hash_password(password)},
+            }
+            self.username = username
+            if not self.is_threading:
+                self.is_threading = True
+                threading.Thread(target=lambda: self.network_thread(request), daemon=True).start()
+            else:
+                self.thread_send(request)
+
+
+    def delete_account(self):
+        password = self.dialog_password_entry.get()
+        request = {
+            "action": "delete_account",
+            "content": {
+                "uuid": self.user_uuid,
+                "password": self.hash_password(password),
+            }
+        }
+        self.thread_send(request)
+
+
+    # ===================================================================
+    # ===================================================================
+    # Server response handling
+    # ===================================================================
+    # ===================================================================
     def handle_server_response(self, response, response_type):
         # response_type = response["response_type"]
         print(f"Action: {response_type}, Response: {response}")
@@ -423,7 +458,4 @@ class ClientGUI:
             messagebox.showerror("Error", response.get("error", "An error occurred"), icon="warning")
     
 
-    def thread_send(self, request):
-        thread = threading.Thread(target=self.send_to_server, args=(request,))
-        thread.start()
 
