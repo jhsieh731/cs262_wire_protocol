@@ -2,7 +2,7 @@ import io
 import json
 import selectors
 import struct
-from custom_protocol import CustomProtocol
+from custom_protocol_2 import CustomProtocol
 
 
 # TODO: link this with client/server...
@@ -83,7 +83,6 @@ class Message:
     ):
         # TODO: rethink header
         header = {
-            "version": 1,
             "content-length": content_length,
             "action": action,
         }
@@ -99,7 +98,8 @@ class Message:
             print(97, header_bytes)
         else:
             raise ValueError(f"Invalid protocol mode {self.protocol_mode!r}.")
-        message_hdr = struct.pack(">H", len(header_bytes))
+        # Pack version (1 byte) and header length (2 bytes)
+        message_hdr = struct.pack(">BH", 1, len(header_bytes))
         message = message_hdr + header_bytes + content_bytes
         print(f"Created message: {message!r}")
         return message
@@ -184,7 +184,19 @@ class Message:
 
     def process_protoheader(self):
         print("process_protoheader")
-        hdrlen = 2 # fixed length
+        version_len = 1  # 1 byte for version
+        hdrlen = 2  # fixed length for header length
+        
+        # First check version
+        if len(self._recv_buffer) >= version_len:
+            version = struct.unpack(">B", self._recv_buffer[:version_len])[0]
+            if version != 1:
+                raise ValueError(f"Cannot handle protocol version {version}")
+            self._recv_buffer = self._recv_buffer[version_len:]
+        else:
+            return
+            
+        # Then process header length
         if len(self._recv_buffer) >= hdrlen:
             print("len of buffer: ", len(self._recv_buffer))
             self._header_len = struct.unpack(
@@ -202,7 +214,7 @@ class Message:
                 )
             elif self.protocol_mode == "custom":
                 self.header = self.custom_protocol.deserialize(
-                    self._recv_buffer[:hdrlen]
+                    self._recv_buffer[:hdrlen], "header"
                 )
             else:
                 raise ValueError(
@@ -233,21 +245,22 @@ class Message:
         data = self._recv_buffer[:content_len]
         print(f"Response content: {data!r}")
         self._recv_buffer = self._recv_buffer[content_len:]
+        action = self.header["action"]
         
         try:
             if self.protocol_mode == "json":
                 decoded_response = self._json_decode(data, "utf-8")
             elif self.protocol_mode == "custom":
-                decoded_response = self.custom_protocol.deserialize(data)
+                decoded_response = self.custom_protocol.deserialize(data, action)
                 # verify checksum
                 computed_checksum = self.custom_protocol.compute_checksum(data)
                 if computed_checksum != self.header["checksum"]:
-                    self.header["action"] = "error"
+                    action = "error"
             else:
                 raise ValueError(f"Invalid protocol mode {self.protocol_mode!r}.")
             print(f"Decoded response: {decoded_response}")
             self.response = decoded_response
-            self.gui.handle_server_response(decoded_response)
+            self.gui.handle_server_response(decoded_response, action)
             # Reset state after successfully processing the response
             self.reset_state()
         except Exception as e:
