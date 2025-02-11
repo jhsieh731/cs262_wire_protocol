@@ -50,9 +50,11 @@ Header:
 
 2/5/25: Added UI interface to create account/login. Would love to add a temporary dictionary storing mappings to active soccets/userids, but need to somehow bypass my message object
 
-2/6/25-2/9/25: Oops! I literally had the flu and a high grade fever, but don't worry I still made progress on this project because the grind never stops (even on your deathbed). Hooray.
+2/6/25-2/9/25: Oops! I literally had the flu and a high grade fever, but don't worry I still made progress on this project because the grind never stops (even on your deathbed). Hooray. Wrote implementations for "load_page_data", "delete_messages" "load_undelivered", "load_messages".
 
 2/10/25: added config file for server, decided not to change how load responses works (so as to reduce response size as you load inevitably more). This is because it would lead to unclear handling of num_messages depending on where you call load_messages. If I have time I might just add another function to resolve this. Update timestamps when message status changes to delivered from pending. Redesign protocols to remove keys (much smaller). Move "response_type" to be "action" instead. Separate gui from client file. Refactor _create_response in msg_server (again) for cleaner code.
+
+2/11/25: Refactored more code, database now returns lists to reduce keys being stored in server response, reordered gui file to be better organized
 
 jsonheader:
 "version"
