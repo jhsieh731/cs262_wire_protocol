@@ -3,8 +3,25 @@ import json
 import selectors
 import struct
 import sys
+import logging
+from datetime import datetime
 from database import MessageDatabase
 from custom_protocol_2 import CustomProtocol
+
+# Set up logging
+server_logger = logging.getLogger('msg_server')
+server_logger.setLevel(logging.INFO)
+
+# Create file handler
+fh = logging.FileHandler('msg_server_log.txt')
+fh.setLevel(logging.INFO)
+
+# Create formatter
+formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+fh.setFormatter(formatter)
+
+# Add handler to logger
+server_logger.addHandler(fh)
 
 db = MessageDatabase()
 
@@ -56,7 +73,7 @@ class Message:
     def _write(self):
         """Write to the client socket"""
         if self._send_buffer:
-            print(f"Sending {self._send_buffer!r} to {self.addr}")
+            server_logger.info(f"Sending {self._send_buffer!r} to {self.addr}")
             try:
                 # Should be ready to write
                 sent = self.sock.send(self._send_buffer)
@@ -141,7 +158,7 @@ class Message:
         if self.header["action"] == "login_register":
             # try to login
             accounts = db.login_or_create_account(request_content.get("username"), request_content.get("password"), str(self.addr))
-            print("account: ", accounts)
+            server_logger.info(f"Account lookup result: {accounts}")
             if (len(accounts) != 1):
                 response_content = {
                     "message": "Please try again",
@@ -183,7 +200,7 @@ class Message:
         elif self.header["action"] == "load_messages":
             user_uuid = request_content.get("uuid")
             num_messages = request_content.get("num_messages")
-            print(f"Loading messages for user {user_uuid} and num_messages {num_messages}")
+            server_logger.info(f"Loading messages for user {user_uuid} and num_messages {num_messages}")
             
             messages, total_undelivered = db.load_messages(user_uuid, num_messages)
             print(f"Found {len(messages)} messages (total: {total_undelivered})")
@@ -200,7 +217,7 @@ class Message:
             message_text = request_content.get("message")
             timestamp = request_content.get("timestamp")
 
-            print("message details: ", sender_uuid, recipient_username, message_text, timestamp)
+            server_logger.info(f"Message details - Sender: {sender_uuid}, Recipient: {recipient_username}, Message: {message_text}, Time: {timestamp}")
             
             # Get recipient's UUID
             success_status, error_msg, recipient_uuid = db.get_user_uuid(recipient_username)
@@ -262,11 +279,11 @@ class Message:
         elif self.header["action"] == "load_undelivered":
             user_uuid = request_content.get("uuid", None)
             num_messages = request_content.get("num_messages", 0)
-            print(f"Loading undelivered messages for user {user_uuid}")
+            server_logger.info(f"Loading undelivered messages for user {user_uuid}")
             
             # Load undelivered messages from db
             messages = db.load_undelivered(user_uuid, num_messages)
-            print(f"Found {len(messages)} undelivered messages")
+            server_logger.info(f"Found {len(messages)} undelivered messages")
             
             response_content = {
                 "messages": messages,
@@ -329,10 +346,10 @@ class Message:
     def process_events(self, mask):
         """Process selector events (first step)"""
         if mask & selectors.EVENT_READ:
-            print("read")
+            server_logger.debug("Read event received")
             self.read()
         if mask & selectors.EVENT_WRITE:
-            print("write")
+            server_logger.debug("Write event received")
             self.write()
 
     def read(self):
@@ -360,7 +377,7 @@ class Message:
 
     def close(self):
         """Close the connection to the client socket"""
-        print(f"Closing connection to {self.addr}")
+        server_logger.info(f"Closing connection to {self.addr}")
         try:
             self.selector.unregister(self.sock)
         except Exception as e:
@@ -428,7 +445,7 @@ class Message:
         data = self._recv_buffer[:content_len]
         self._recv_buffer = self._recv_buffer[content_len:]
         self.request = data
-        print(f"Stored request data: {self.request!r}")
+        server_logger.info(f"Stored request data: {self.request!r}")
         # Set selector to listen for write events, we're ready to respond
         self._set_selector_events_mask("w")
 

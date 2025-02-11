@@ -1,8 +1,24 @@
 import sys
 import socket
 import selectors
+import logging
 from msg_server import Message
 import json
+
+# Set up logging
+logger = logging.getLogger('server')
+logger.setLevel(logging.INFO)
+
+# Create file handler
+fh = logging.FileHandler('server_log.txt')
+fh.setLevel(logging.INFO)
+
+# Create formatter
+formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+fh.setFormatter(formatter)
+
+# Add handler to logger
+logger.addHandler(fh)
 
 
 sel = selectors.DefaultSelector()
@@ -16,23 +32,23 @@ def initialize_server(host, port):
         try:
             lsock.bind((host, port))
         except OSError as e:
-            print(f"Error binding to {host}:{port} - {e}")
-            print("Try using a different port number.")
+            logger.error(f"Error binding to {host}:{port} - {e}")
+            logger.error("Try using a different port number.")
             lsock.close()
             sys.exit(1)
         lsock.listen()
-        print(f"Listening on {(host, port)}")
+        logger.info(f"Listening on {(host, port)}")
         lsock.setblocking(False)
         sel.register(lsock, selectors.EVENT_READ, data=None)
         return lsock
     except Exception as e:
-        print(f"Error initializing server: {e}")
+        logger.error(f"Error initializing server: {e}")
         sys.exit(1)
 
 def accept_wrapper(sock, accepted_versions):
     """Accept a new connection and register it with the selector."""
     conn, addr = sock.accept()  # Should be ready to read
-    print(f"Accepted connection from {addr}")
+    logger.info(f"Accepted connection from {addr}")
     conn.setblocking(False)
     message = Message(sel, conn, addr, accepted_versions)
     sel.register(conn, selectors.EVENT_READ, data=message)
