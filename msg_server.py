@@ -3,8 +3,12 @@ import json
 import selectors
 import struct
 import sys
+from datetime import datetime
 from database import MessageDatabase
 from custom_protocol_2 import CustomProtocol
+from logger import set_logger
+
+server_logger = set_logger("msg_server", "server.log")
 
 db = MessageDatabase()
 
@@ -56,7 +60,7 @@ class Message:
     def _write(self):
         """Write to the client socket"""
         if self._send_buffer:
-            print(f"Sending {self._send_buffer!r} to {self.addr}")
+            server_logger.info(f"Sending {self._send_buffer!r} to {self.addr}")
             try:
                 # Should be ready to write
                 sent = self.sock.send(self._send_buffer)
@@ -91,6 +95,7 @@ class Message:
     ):
         """Create a message with the given content"""
         header = {
+            "version": 1,
             "content-length": content_length,
             "action": action,
         }
@@ -101,8 +106,9 @@ class Message:
             header["checksum"] = checksum
             header_bytes = self.custom_protocol.serialize(header)
         
-        # Pack version (1 byte) and header length (2 bytes)
-        message_hdr = struct.pack(">BH", 1, len(header_bytes))
+        # Pack version (1 byte), protocol type, and header length (2 bytes)
+        protocol_byte = 0 if self.protocol_mode == "json" else 2
+        message_hdr = struct.pack(">BBH", 1, protocol_byte, len(header_bytes))
         message = message_hdr + header_bytes + content_bytes
         return message
     
@@ -135,12 +141,12 @@ class Message:
 
         response_content = {}
         action = "error"
-        print("action: ", self.header["action"])
+        server_logger.info(f"action: {self.header['action']}")
         # Create response content and encode it
         if self.header["action"] == "login_register":
             # try to login
             accounts = db.login_or_create_account(request_content.get("username"), request_content.get("password"), str(self.addr))
-            print("account: ", accounts)
+            server_logger.info(f"Account lookup result: {accounts}")
             if (len(accounts) != 1):
                 response_content = {
                     "message": "Please try again",
@@ -156,7 +162,7 @@ class Message:
 
             # Load page data
             messages, num_pending, accounts, total_count = db.load_page_data(user_uuid)
-            print(f"Loaded page data from db")
+            server_logger.info(f"Loaded page data from db")
             
             response_content = {
                 "messages": messages,
@@ -172,7 +178,7 @@ class Message:
             
             # Search for accounts with pagination
             accounts, total_count = db.search_accounts(search_term, offset)
-            print(f"Found {len(accounts)} accounts (total: {total_count})")
+            server_logger.info(f"Found {len(accounts)} accounts (total: {total_count})")
             
             response_content = {
                 "accounts": accounts,
@@ -182,10 +188,10 @@ class Message:
         elif self.header["action"] == "load_messages":
             user_uuid = request_content.get("uuid")
             num_messages = request_content.get("num_messages")
-            print(f"Loading messages for user {user_uuid} and num_messages {num_messages}")
+            server_logger.info(f"Loading messages for user {user_uuid} and num_messages {num_messages}")
             
             messages, total_undelivered = db.load_messages(user_uuid, num_messages)
-            print(f"Found {len(messages)} messages (total: {total_undelivered})")
+            server_logger.info(f"Found {len(messages)} messages (total: {total_undelivered})")
             
             response_content = {
                 "messages": messages,
@@ -199,7 +205,7 @@ class Message:
             message_text = request_content.get("message")
             timestamp = request_content.get("timestamp")
 
-            print("message details: ", sender_uuid, recipient_username, message_text, timestamp)
+            server_logger.info(f"Message details - Sender: {sender_uuid}, Recipient: {recipient_username}, Message: {message_text}, Time: {timestamp}")
             
             # Get recipient's UUID
             success_status, error_msg, recipient_uuid = db.get_user_uuid(recipient_username)
@@ -207,7 +213,7 @@ class Message:
                 # Get recipient's associated socket
                 recipient_socket = db.get_associated_socket(recipient_uuid)
                 sender_username = db.get_user_username(sender_uuid)
-                print(sender_username)
+                server_logger.info(sender_username)
                 
                 # ensure all fields are there
                 if recipient_socket and sender_username:
@@ -229,7 +235,7 @@ class Message:
                     
                     relay_message = self._create_message(
                         content_bytes=relay_content_bytes,
-                        action="receive_message",
+                        action="receive_message_r",
                         content_length=len(relay_content_bytes)
                     )
                     
@@ -238,16 +244,16 @@ class Message:
                         # Find the socket object associated with the recipient
                         for key, data in self.selector.get_map().items():
                             if data.data and isinstance(data.data, Message) and str(data.data.addr) == recipient_socket:
-                                print(f"Relaying message to {recipient_socket}")
+                                server_logger.info(f"Relaying message to {recipient_socket}")
                                 status = True
                                 data.data._send_buffer += relay_message
                                 data.data._set_selector_events_mask("w")
                                 break
                         else:
-                            print(f"Error: Could not find recipient socket {recipient_socket}")
+                            server_logger.error(f"Error: Could not find recipient socket {recipient_socket}")
                             status = False
                     except Exception as e:
-                        print(f"Error relaying message: {e}")
+                        server_logger.error(f"Error relaying message: {e}")
 
                 # Store the message
                 success_status, error_msg = db.store_message(sender_uuid, recipient_uuid, message_text, status, timestamp)
@@ -261,21 +267,19 @@ class Message:
         elif self.header["action"] == "load_undelivered":
             user_uuid = request_content.get("uuid", None)
             num_messages = request_content.get("num_messages", 0)
-            print(f"Loading undelivered messages for user {user_uuid}")
+            server_logger.info(f"Loading undelivered messages for user {user_uuid}")
             
             # Load undelivered messages from db
             messages = db.load_undelivered(user_uuid, num_messages)
-            print(f"Found {len(messages)} undelivered messages")
+            server_logger.info(f"Found {len(messages)} undelivered messages")
             
             response_content = {
                 "messages": messages,
             }
             action = "load_undelivered_r"
         elif self.header["action"] == "delete_messages":
-            print("Deleting messages")
             msg_ids = request_content.get("msgids", [])
             num_deleted = db.delete_messages(msg_ids)
-            print(f"db delete_messages ran")
             response_content = {
                 "total_count": num_deleted,
             }
@@ -286,7 +290,7 @@ class Message:
             
             # Get the stored password from database
             stored_password = db.get_user_password(user_uuid)
-            print(f"Retrieved stored password: {'Found' if stored_password else 'Not found'}")
+            server_logger.info(f"Retrieved stored password: {'Found' if stored_password else 'Not found'}")
             success = False
             error_message = ""
             if stored_password == password:
@@ -328,10 +332,10 @@ class Message:
     def process_events(self, mask):
         """Process selector events (first step)"""
         if mask & selectors.EVENT_READ:
-            print("read")
+            server_logger.debug("Read event received")
             self.read()
         if mask & selectors.EVENT_WRITE:
-            print("write")
+            server_logger.debug("Write event received")
             self.write()
 
     def read(self):
@@ -359,11 +363,11 @@ class Message:
 
     def close(self):
         """Close the connection to the client socket"""
-        print(f"Closing connection to {self.addr}")
+        server_logger.info(f"Closing connection to {self.addr}")
         try:
             self.selector.unregister(self.sock)
         except Exception as e:
-            print(
+            server_logger.error(
                 f"Error: selector.unregister() exception for "
                 f"{self.addr}: {e!r}"
             )
@@ -371,7 +375,7 @@ class Message:
         try:
             self.sock.close()
         except OSError as e:
-            print(f"Error: socket.close() exception for {self.addr}: {e!r}")
+            server_logger.error(f"Error: socket.close() exception for {self.addr}: {e!r}")
         finally:
             # Delete reference to socket object for garbage collection
             self.sock = None
@@ -380,14 +384,20 @@ class Message:
     def process_protoheader(self):
         """Process the protocol header (step 1 of read pipeline)"""
         version_len = 1  # 1 byte for version
+        protocol_len = 1  # 1 byte for protocol type
         hdrlen = 2  # fixed length for header length
         
         # First check version
-        if len(self._recv_buffer) >= version_len:
+        if len(self._recv_buffer) >= (version_len + protocol_len):
             version = struct.unpack(">B", self._recv_buffer[:version_len])[0]
             if version not in self.accepted_versions:
                 raise ValueError(f"Cannot handle protocol version {version}")
             self._recv_buffer = self._recv_buffer[version_len:]
+            client_protocol_num = struct.unpack(">B", self._recv_buffer[:protocol_len])[0]
+            client_protocol = "json" if client_protocol_num == 0 else "custom"
+            if self.protocol_mode != client_protocol:
+                raise ValueError(f"Client protocol {client_protocol} does not match server protocol {self.protocol_mode}")
+            self._recv_buffer = self._recv_buffer[protocol_len:]
         else:
             return
             
@@ -427,7 +437,7 @@ class Message:
         data = self._recv_buffer[:content_len]
         self._recv_buffer = self._recv_buffer[content_len:]
         self.request = data
-        print(f"Stored request data: {self.request!r}")
+        server_logger.info(f"Stored request data: {self.request!r}")
         # Set selector to listen for write events, we're ready to respond
         self._set_selector_events_mask("w")
 

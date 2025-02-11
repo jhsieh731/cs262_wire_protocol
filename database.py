@@ -105,13 +105,14 @@ class MessageDatabase:
                 return [dict(user)]
             
             # Register; Check if the username is unique
-            username_res = cursor.execute(check_username_sql, (username,))
-            if username_res is None:
+            cursor.execute(check_username_sql, (username,))
+            if cursor.fetchone() is None:
                 # Create a new account
                 cursor.execute(create_account_sql, (username, password, socket))
                 conn.commit()
                 cursor.execute(login_sql, (username, password))
                 new_user = cursor.fetchone()
+                print("new_user: ", new_user)
                 if new_user:
                     return [dict(new_user)]
             return []

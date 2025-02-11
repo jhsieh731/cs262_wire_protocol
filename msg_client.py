@@ -2,7 +2,23 @@ import io
 import json
 import selectors
 import struct
+import logging
 from custom_protocol_2 import CustomProtocol
+
+# Set up logging
+client_logger = logging.getLogger('msg_client')
+client_logger.setLevel(logging.INFO)
+
+# Create file handler
+fh = logging.FileHandler('msg_client.log')
+fh.setLevel(logging.INFO)
+
+# Create formatter
+formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+fh.setFormatter(formatter)
+
+# Add handler to logger
+client_logger.addHandler(fh)
 
 
 # TODO: link this with client/server...
@@ -21,6 +37,7 @@ class Message:
         self.response = None
         self.protocol_mode = "custom" # "json" or "custom"
         self.custom_protocol = CustomProtocol()
+        self.version = 1
 
         # validate protocol_mode: if unknown protocol, do not assume
         if self.protocol_mode not in ["json", "custom"]:
@@ -56,7 +73,7 @@ class Message:
         """Write to the socket."""
         print("_write")
         if self._send_buffer:
-            print(f"Sending {self._send_buffer!r} to {self.addr}")
+            client_logger.info(f"Sending {self._send_buffer!r} to {self.addr}")
             try:
                 # Should be ready to write
                 sent = self.sock.send(self._send_buffer)
@@ -100,9 +117,9 @@ class Message:
             checksum = self.custom_protocol.compute_checksum(content_bytes)
             header["checksum"] = checksum
             header_bytes = self.custom_protocol.serialize(header)
-
         # Pack version (1 byte) and header length (2 bytes)
-        message_hdr = struct.pack(">BH", 1, len(header_bytes))
+        protocol_num = 0 if self.protocol_mode == "json" else 1
+        message_hdr = struct.pack(">BBH", self.version, protocol_num, len(header_bytes))
         message = message_hdr + header_bytes + content_bytes
         print(f"Created message: {message!r}")
         return message
@@ -110,10 +127,10 @@ class Message:
     def process_events(self, mask):
         """Process selector events (step 1 of processing)"""
         if mask & selectors.EVENT_READ:
-            print("read")
+            client_logger.debug("Read event received")
             self.read()
         if mask & selectors.EVENT_WRITE:
-            print("write")
+            client_logger.debug("Write event received")
             self.write()
 
     def read(self):
@@ -194,14 +211,20 @@ class Message:
         """Process the protocol header (read pipeline step 1)."""
         print("process_protoheader")
         version_len = 1  # 1 byte for version
+        protocol_len = 1  # 1 byte for protocol type
         hdrlen = 2  # fixed length for header length
         
         # First check version
-        if len(self._recv_buffer) >= version_len:
+        if len(self._recv_buffer) >= (version_len + protocol_len):
             version = struct.unpack(">B", self._recv_buffer[:version_len])[0]
-            if version != 1:
+            if version != self.version:
                 raise ValueError(f"Cannot handle protocol version {version}")
             self._recv_buffer = self._recv_buffer[version_len:]
+            server_protocol_num = struct.unpack(">B", self._recv_buffer[:protocol_len])[0]
+            server_protocol = "json" if server_protocol_num == 0 else "custom"
+            if server_protocol != self.protocol_mode:
+                raise ValueError(f"Cannot handle protocol type {server_protocol_num}")
+            self._recv_buffer = self._recv_buffer[protocol_len:]
         else:
             return
             
