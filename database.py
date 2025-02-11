@@ -1,6 +1,7 @@
 import sqlite3
 from typing import List, Tuple, Optional
 import os
+from datetime import datetime
 
 class MessageDatabase:
     def __init__(self, db_file: str = "messages.db"):
@@ -69,6 +70,9 @@ class MessageDatabase:
         create_account_sql = """INSERT INTO users (username, hashed_password, associated_socket) VALUES (?, ?, ?);"""
         check_username_sql = """SELECT * FROM users WHERE username = ?;"""
         update_socket_sql = """UPDATE users SET associated_socket = ? WHERE userid = ?;"""
+
+        if not username or not password or not socket:
+            return []
 
         try:
             conn = self.connect()
@@ -228,13 +232,13 @@ class MessageDatabase:
             if conn:
                 conn.close()
 
-    def search_accounts(self, search_term: str, current_page: int = 0, accounts_per_page: int = 10) -> tuple[list[dict], int]:
+    def search_accounts(self, search_term: str, offset: int) -> tuple[list[dict], int]:
         """
         Search for user accounts with pagination.
         Returns (list of user dictionaries, total count of matching users)
         """
         try:
-            print(f"\nSearching for term: '{search_term}' (page {current_page}, per_page {accounts_per_page})")
+            print(f"\nSearching for term: '{search_term}' offset {offset}")
             conn = self.connect()
             if conn is None:
                 print("Database connection failed")
@@ -254,29 +258,26 @@ class MessageDatabase:
             total_count = cursor.fetchone()["total"]
             print(f"Total matching users: {total_count}")
             
-            # Calculate offset
-            offset = current_page * accounts_per_page
-            
             # Get paginated results
             if search_term == "":
                 search_sql = """
                     SELECT userid, username 
                     FROM users 
                     ORDER BY username ASC
-                    LIMIT ? OFFSET ?
+                    LIMIT 10 OFFSET ?
                 """
-                print(f"\nExecuting SQL to get users (limit {accounts_per_page}, offset {offset})")
-                cursor.execute(search_sql, (accounts_per_page, offset))
+                print(f"\nExecuting SQL to get users (limit 10, offset {offset})")
+                cursor.execute(search_sql, (offset,))
             else:
                 search_sql = """
                     SELECT userid, username 
                     FROM users 
                     WHERE username LIKE '%' || ? || '%'
                     ORDER BY username ASC
-                    LIMIT ? OFFSET ?
+                    LIMIT 10 OFFSET ?
                 """
                 print(f"\nExecuting SQL to search for '{search_term}'")
-                cursor.execute(search_sql, (search_term, accounts_per_page, offset))
+                cursor.execute(search_sql, (search_term, offset))
             
             results = [dict(row) for row in cursor.fetchall()]
             print(f"\nQuery results: {results}")
@@ -444,7 +445,7 @@ class MessageDatabase:
 
     def load_page_data(self, user_uuid):
         messages, num_pending = self.load_messages(user_uuid, 10)
-        accounts, total_count = self.search_accounts("", 0, 10)
+        accounts, total_count = self.search_accounts("", 0)
         return messages, num_pending, accounts, total_count
 
     def delete_messages(self, msg_ids):
@@ -515,7 +516,9 @@ class MessageDatabase:
 
             # update status to delivered for these messages
             msg_ids = [msg["msgid"] for msg in messages]
-            cursor.execute("UPDATE messages SET status = 'delivered' WHERE msgid IN ({})".format(",".join("?" * len(msg_ids))), msg_ids)
+            # cursor.execute("UPDATE messages SET status = 'delivered' WHERE msgid IN ({})".format(",".join("?" * len(msg_ids))), msg_ids)
+            current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            cursor.execute("UPDATE messages SET status = 'delivered', timestamp = ? WHERE msgid IN ({})".format(",".join("?" * len(msg_ids))), [current_time] + msg_ids)
             conn.commit()
             return [dict(message) for message in messages]
 
