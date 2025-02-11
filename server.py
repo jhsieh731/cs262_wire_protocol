@@ -1,26 +1,11 @@
 import sys
 import socket
 import selectors
-import logging
 from msg_server import Message
 import json
+from logger import set_logger
 
-# Set up logging
-logger = logging.getLogger('server')
-logger.setLevel(logging.INFO)
-
-# Create file handler
-fh = logging.FileHandler('server_log.txt')
-fh.setLevel(logging.INFO)
-
-# Create formatter
-formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-fh.setFormatter(formatter)
-
-# Add handler to logger
-logger.addHandler(fh)
-
-
+logger = set_logger("server", "server.log")
 sel = selectors.DefaultSelector()
 
 def initialize_server(host, port):

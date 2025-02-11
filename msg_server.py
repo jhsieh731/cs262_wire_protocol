@@ -3,25 +3,12 @@ import json
 import selectors
 import struct
 import sys
-import logging
 from datetime import datetime
 from database import MessageDatabase
 from custom_protocol_2 import CustomProtocol
+from logger import set_logger
 
-# Set up logging
-server_logger = logging.getLogger('msg_server')
-server_logger.setLevel(logging.INFO)
-
-# Create file handler
-fh = logging.FileHandler('msg_server_log.txt')
-fh.setLevel(logging.INFO)
-
-# Create formatter
-formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-fh.setFormatter(formatter)
-
-# Add handler to logger
-server_logger.addHandler(fh)
+server_logger = set_logger("msg_server", "server.log")
 
 db = MessageDatabase()
 
@@ -119,8 +106,9 @@ class Message:
             header["checksum"] = checksum
             header_bytes = self.custom_protocol.serialize(header)
         
-        # Pack version (1 byte) and header length (2 bytes)
-        message_hdr = struct.pack(">BH", 1, len(header_bytes))
+        # Pack version (1 byte), protocol type, and header length (2 bytes)
+        protocol_byte = 0 if self.protocol_mode == "json" else 2
+        message_hdr = struct.pack(">BBH", 1, protocol_byte, len(header_bytes))
         message = message_hdr + header_bytes + content_bytes
         return message
     
@@ -153,7 +141,7 @@ class Message:
 
         response_content = {}
         action = "error"
-        print("action: ", self.header["action"])
+        server_logger.info(f"action: {self.header['action']}")
         # Create response content and encode it
         if self.header["action"] == "login_register":
             # try to login
@@ -174,7 +162,7 @@ class Message:
 
             # Load page data
             messages, num_pending, accounts, total_count = db.load_page_data(user_uuid)
-            print(f"Loaded page data from db")
+            server_logger.info(f"Loaded page data from db")
             
             response_content = {
                 "messages": messages,
@@ -190,7 +178,7 @@ class Message:
             
             # Search for accounts with pagination
             accounts, total_count = db.search_accounts(search_term, offset)
-            print(f"Found {len(accounts)} accounts (total: {total_count})")
+            server_logger.info(f"Found {len(accounts)} accounts (total: {total_count})")
             
             response_content = {
                 "accounts": accounts,
@@ -203,7 +191,7 @@ class Message:
             server_logger.info(f"Loading messages for user {user_uuid} and num_messages {num_messages}")
             
             messages, total_undelivered = db.load_messages(user_uuid, num_messages)
-            print(f"Found {len(messages)} messages (total: {total_undelivered})")
+            server_logger.info(f"Found {len(messages)} messages (total: {total_undelivered})")
             
             response_content = {
                 "messages": messages,
@@ -225,7 +213,7 @@ class Message:
                 # Get recipient's associated socket
                 recipient_socket = db.get_associated_socket(recipient_uuid)
                 sender_username = db.get_user_username(sender_uuid)
-                print(sender_username)
+                server_logger.info(sender_username)
                 
                 # ensure all fields are there
                 if recipient_socket and sender_username:
@@ -256,16 +244,16 @@ class Message:
                         # Find the socket object associated with the recipient
                         for key, data in self.selector.get_map().items():
                             if data.data and isinstance(data.data, Message) and str(data.data.addr) == recipient_socket:
-                                print(f"Relaying message to {recipient_socket}")
+                                server_logger.info(f"Relaying message to {recipient_socket}")
                                 status = True
                                 data.data._send_buffer += relay_message
                                 data.data._set_selector_events_mask("w")
                                 break
                         else:
-                            print(f"Error: Could not find recipient socket {recipient_socket}")
+                            server_logger.error(f"Error: Could not find recipient socket {recipient_socket}")
                             status = False
                     except Exception as e:
-                        print(f"Error relaying message: {e}")
+                        server_logger.error(f"Error relaying message: {e}")
 
                 # Store the message
                 success_status, error_msg = db.store_message(sender_uuid, recipient_uuid, message_text, status, timestamp)
@@ -290,10 +278,8 @@ class Message:
             }
             action = "load_undelivered_r"
         elif self.header["action"] == "delete_messages":
-            print("Deleting messages")
             msg_ids = request_content.get("msgids", [])
             num_deleted = db.delete_messages(msg_ids)
-            print(f"db delete_messages ran")
             response_content = {
                 "total_count": num_deleted,
             }
@@ -304,7 +290,7 @@ class Message:
             
             # Get the stored password from database
             stored_password = db.get_user_password(user_uuid)
-            print(f"Retrieved stored password: {'Found' if stored_password else 'Not found'}")
+            server_logger.info(f"Retrieved stored password: {'Found' if stored_password else 'Not found'}")
             success = False
             error_message = ""
             if stored_password == password:
@@ -381,7 +367,7 @@ class Message:
         try:
             self.selector.unregister(self.sock)
         except Exception as e:
-            print(
+            server_logger.error(
                 f"Error: selector.unregister() exception for "
                 f"{self.addr}: {e!r}"
             )
@@ -389,7 +375,7 @@ class Message:
         try:
             self.sock.close()
         except OSError as e:
-            print(f"Error: socket.close() exception for {self.addr}: {e!r}")
+            server_logger.error(f"Error: socket.close() exception for {self.addr}: {e!r}")
         finally:
             # Delete reference to socket object for garbage collection
             self.sock = None
@@ -398,14 +384,20 @@ class Message:
     def process_protoheader(self):
         """Process the protocol header (step 1 of read pipeline)"""
         version_len = 1  # 1 byte for version
+        protocol_len = 1  # 1 byte for protocol type
         hdrlen = 2  # fixed length for header length
         
         # First check version
-        if len(self._recv_buffer) >= version_len:
+        if len(self._recv_buffer) >= (version_len + protocol_len):
             version = struct.unpack(">B", self._recv_buffer[:version_len])[0]
             if version not in self.accepted_versions:
                 raise ValueError(f"Cannot handle protocol version {version}")
             self._recv_buffer = self._recv_buffer[version_len:]
+            client_protocol_num = struct.unpack(">B", self._recv_buffer[:protocol_len])[0]
+            client_protocol = "json" if client_protocol_num == 0 else "custom"
+            if self.protocol_mode != client_protocol:
+                raise ValueError(f"Client protocol {client_protocol} does not match server protocol {self.protocol_mode}")
+            self._recv_buffer = self._recv_buffer[protocol_len:]
         else:
             return
             
