@@ -2,10 +2,12 @@ import sys
 import socket
 import selectors
 from msg_server import Message
+import json
+
 
 sel = selectors.DefaultSelector()
 
-def initialize_server(host='localhost', port=65432):
+def initialize_server(host, port):
     """Initialize the server with the given host and port."""
     try:
         lsock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -27,23 +29,23 @@ def initialize_server(host='localhost', port=65432):
         print(f"Error initializing server: {e}")
         sys.exit(1)
 
-def accept_wrapper(sock):
+def accept_wrapper(sock, accepted_versions):
     """Accept a new connection and register it with the selector."""
     conn, addr = sock.accept()  # Should be ready to read
     print(f"Accepted connection from {addr}")
     conn.setblocking(False)
-    message = Message(sel, conn, addr)
+    message = Message(sel, conn, addr, accepted_versions)
     sel.register(conn, selectors.EVENT_READ, data=message)
 
 
-def run_server():
+def run_server(accepted_versions):
     """Run the server event loop."""
     try:
         while True:
             events = sel.select(timeout=None)
             for key, mask in events:
                 if key.data is None:
-                    accept_wrapper(key.fileobj)
+                    accept_wrapper(key.fileobj, accepted_versions)
                 else:
                     message = key.data
                     try:
@@ -65,22 +67,18 @@ def run_server():
 
 
 if __name__ == '__main__':
-    if len(sys.argv) != 3:
-        print(f"Usage: {sys.argv[0]} <host> <port>")
-        sys.exit(1)
     try:
-        host, port = sys.argv[1], int(sys.argv[2])
-        if port < 1024 and port != 0:  # Avoid privileged ports
-            print("Error: Please use a port number >= 1024")
-            sys.exit(1)
+        # load config.json
+        with open('config.json', 'r') as f:
+            config = json.load(f)
+        host = config['host']
+        port = config['port']
+        accepted_versions = config['accepted_versions']
         lsock = initialize_server(host, port)
-        run_server()
-    except ValueError:
-        print(f"Error: Port must be a number")
+        run_server(accepted_versions)
+    except Exception as e:
+        print(f"Error: {e}")
         sys.exit(1)
     except KeyboardInterrupt:
         print("\nShutting down server...")
         sys.exit(0)
-    except ValueError:
-        print(f"Error: Port must be a number")
-        sys.exit(1)

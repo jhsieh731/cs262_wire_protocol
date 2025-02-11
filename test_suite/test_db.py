@@ -50,6 +50,10 @@ class TestDatabase(unittest.TestCase):
         accounts = self.db.login_or_create_account(self.test_user1["username"], "wrongpassword", self.test_user1["socket"])
         self.assertEqual(len(accounts), 0)
 
+        # Test with empty username
+        accounts = self.db.login_or_create_account("", self.test_user1["password"], self.test_user1["socket"])
+        self.assertEqual(len(accounts), 0)
+
     def test_get_user_uuid(self):
         # Create test user first
         self.db.login_or_create_account(self.test_user1["username"], self.test_user1["password"], self.test_user1["socket"])
@@ -119,18 +123,18 @@ class TestDatabase(unittest.TestCase):
         self.db.login_or_create_account(self.test_user2["username"], self.test_user2["password"], self.test_user2["socket"])
 
         # Test searching with empty string (should return all users)
-        accounts, total = self.db.search_accounts("", 0, 10)
+        accounts, total = self.db.search_accounts("", 0)
         self.assertEqual(total, 2)
         self.assertEqual(len(accounts), 2)
 
         # Test searching with specific term
-        accounts, total = self.db.search_accounts("testuser1", 0, 10)
+        accounts, total = self.db.search_accounts("testuser1", 0)
         self.assertEqual(total, 1)
         self.assertEqual(len(accounts), 1)
         self.assertEqual(accounts[0]["username"], self.test_user1["username"])
 
         # Test searching with non-existent term
-        accounts, total = self.db.search_accounts("nonexistent", 0, 10)
+        accounts, total = self.db.search_accounts("nonexistent", 0)
         self.assertEqual(total, 0)
         self.assertEqual(len(accounts), 0)
 
