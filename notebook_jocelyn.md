@@ -94,3 +94,10 @@ Should we forcibly try to determine whether an incoming request is json or custo
 add-ons:
 
 - We should probably use "action" in our server messages instead of response-type but lowkey that's a lot of work
+
+TODO
+
+- make nice active area (user sent msgs)
+- docs
+- chat history
+- custom protocol 2 testing

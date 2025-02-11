@@ -88,7 +88,7 @@ class ClientGUI:
         self.search_button.pack(side=tk.LEFT)
 
         # Delete Account Button
-        self.delete_account_button = tk.Button(self.accounts_frame, text="Delete my account", command=self.confirm_delete_account, fg="red")
+        self.delete_account_button = tk.Button(self.accounts_frame, text="Delete my account", command=self.create_confirm_delete_account, fg="red")
         self.delete_account_button.pack(padx=10, pady=5)
 
         self.accounts_listbox = tk.Listbox(self.accounts_frame)
@@ -285,50 +285,53 @@ class ClientGUI:
             self.thread_send(request)
 
 
-    def confirm_delete_account(self):
+    def delete_account(self):
+        password = self.dialog_password_entry.get()
+        request = {
+            "action": "delete_account",
+            "content": {
+                "uuid": self.user_uuid,
+                "password": self.hash_password(password),
+            }
+        }
+        self.thread_send(request)
+
+
+    def create_confirm_delete_account(self):
         # Create a dialog window
-        dialog = tk.Toplevel(self.master)
-        dialog.title("Confirm Account Deletion")
-        dialog.geometry("300x250")  # Increased height
-        dialog.transient(self.master)  # Make dialog modal
-        dialog.grab_set()  # Make the dialog modal
+        self.dialog = tk.Toplevel(self.master)
+        self.dialog.title("Confirm Account Deletion")
+        self.dialog.geometry("300x250")  # Increased height
+        self.dialog.transient(self.master)  # Make dialog modal
+        self.dialog.grab_set()  # Make the dialog modal
 
         # Add warning message
-        warning_label = tk.Label(dialog, text="Are you sure you want to delete your account?\nThis action cannot be undone.", wraplength=250)
+        warning_label = tk.Label(self.dialog, text="Are you sure you want to delete your account?\nThis action cannot be undone.", wraplength=250)
         warning_label.pack(padx=10, pady=10)
 
         # Password entry
-        password_label = tk.Label(dialog, text="Enter your password to confirm:")
+        password_label = tk.Label(self.dialog, text="Enter your password to confirm:")
         password_label.pack(padx=10, pady=5)
-        password_entry = tk.Entry(dialog, show="*")
-        password_entry.pack(padx=10, pady=5)
-
-        def delete_account():
-            password = password_entry.get()
-            request = {
-                "action": "delete_account",
-                "content": {
-                    "uuid": self.user_uuid,
-                    "password": self.hash_password(password),
-                }
-            }
-            self.thread_send(request)
-            dialog.destroy()
-            self.create_login_page()
+        self.dialog_password_entry = tk.Entry(self.dialog, show="*")
+        self.dialog_password_entry.pack(padx=10, pady=5)
 
         # Buttons
-        delete_button = tk.Button(dialog, text="Delete account", command=delete_account, fg="red")
+        delete_button = tk.Button(self.dialog, text="Delete account", command=self.delete_account, fg="red")
         delete_button.pack(pady=10)
         
-        cancel_button = tk.Button(dialog, text="Cancel", command=dialog.destroy)
+        cancel_button = tk.Button(self.dialog, text="Cancel", command=self.dialog.destroy)
         cancel_button.pack(pady=5)
+
 
     def handle_server_response(self, response, response_type):
         # response_type = response["response_type"]
         print(f"Action: {response_type}, Response: {response}")
         
         if response_type == "delete_account_r":
-            if not response["success"]:
+            if response["success"]:
+                self.dialog.destroy()
+                self.create_login_page()
+            else:
                 messagebox.showerror("Error", response["error"])
 
         elif response_type == "login_register_r":
