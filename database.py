@@ -102,6 +102,7 @@ class MessageDatabase:
         except sqlite3.Error as e:
             logger.error(f"Error registering user: {e}")
             return None, str(e)
+
         finally:
             if conn:
                 conn.close()
@@ -141,7 +142,7 @@ class MessageDatabase:
             cursor.execute(update_socket_sql, (socket, user["userid"]))
             conn.commit()
             return [dict(user)]
-            
+
         except sqlite3.Error as e:
             logger.error(f"Error in login_or_create_account: {e}")
             return []

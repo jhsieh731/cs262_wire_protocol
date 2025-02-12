@@ -77,8 +77,6 @@ def start_connection(gui, request):
     sel.register(sock, events, data=message)
 
 
-
-
 if __name__ == '__main__':
     if len(sys.argv) != 4:
         logger.info(f"Usage: {sys.argv[0]} <host> <port> <protocol>")

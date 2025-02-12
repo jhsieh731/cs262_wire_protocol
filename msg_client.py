@@ -8,6 +8,7 @@ from logger import set_logger
 
 logger = set_logger('msg_client', 'msg_client.log')
 
+
 class Message:
     def __init__(self, selector, sock, addr, gui, request, protocol):
         self.selector = selector
@@ -239,6 +240,8 @@ class Message:
                 self.header = self.custom_protocol.deserialize(
                     self._recv_buffer[:hdrlen], "header"
                 )
+            else:
+                raise ValueError(f"Invalid protocol mode {self.protocol_mode!r}")
             
             # verify header
             logger.info(f"JSON header: {self.header!r}")

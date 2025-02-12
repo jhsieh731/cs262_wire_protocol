@@ -3,7 +3,8 @@ import sys
 import os
 import sqlite3
 
-# to run: python3 -m unittest test_database.py -v
+# to run: python3 -m unittest test_suite/test_database.py -v
+
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from database import MessageDatabase
@@ -35,11 +36,13 @@ class TestDatabase(unittest.TestCase):
         if os.path.exists(self.db_file):
             os.remove(self.db_file)
 
+
     def register_user(self, username, password, socket):
         """Helper method to register a user."""
         is_used, _ = self.db.check_username(username)
         if not is_used:
             self.db.register(username, password, socket)
+
 
     def test_close(self):
         """Test database connection closing."""
@@ -123,6 +126,7 @@ class TestDatabase(unittest.TestCase):
         # Create test user first
         self.register_user(self.test_user1["username"], self.test_user1["password"], self.test_user1["socket"])
 
+
         # Test getting UUID of existing user
         success, error, uuid = self.db.get_user_uuid(self.test_user1["username"])
         self.assertTrue(success)
@@ -140,6 +144,7 @@ class TestDatabase(unittest.TestCase):
         self.register_user(self.test_user1["username"], self.test_user1["password"], self.test_user1["socket"])
         success, error, uuid = self.db.get_user_uuid(self.test_user1["username"])
 
+
         # Test getting socket of existing user
         socket = self.db.get_associated_socket(uuid)
         self.assertEqual(socket, self.test_user1["socket"])
@@ -155,6 +160,7 @@ class TestDatabase(unittest.TestCase):
         self.register_user(self.test_user2["username"], self.test_user2["password"], self.test_user2["socket"])
         success1, error1, uuid1 = self.db.get_user_uuid(self.test_user1["username"])
         success2, error2, uuid2 = self.db.get_user_uuid(self.test_user2["username"])
+
         
         # Test storing a valid message
         success, error = self.db.store_message(uuid1, uuid2, "Test message", True, "2025-02-10 10:00:00")
@@ -257,6 +263,7 @@ class TestDatabase(unittest.TestCase):
         self.db.store_message(uuid1, uuid2, "Newest Message", True, "2025-02-10 10:02:00")
 
         # Test loading messages for user2
+
         messages, pending = self.db.load_messages(uuid2, 10)
         self.assertEqual(len(messages), 3)  # Should see all messages
 
