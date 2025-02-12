@@ -130,8 +130,14 @@ class ClientGUI:
         self.search_button.pack(side=tk.LEFT)
 
         # Delete Account Button
-        self.delete_account_button = tk.Button(self.accounts_frame, text="Delete my account", command=self.create_confirm_delete_account_page, fg="red")
-        self.delete_account_button.pack(padx=10, pady=5)
+        account_buttons_frame = tk.Frame(self.accounts_frame)
+        account_buttons_frame.pack(pady=5)
+        
+        self.delete_account_button = tk.Button(account_buttons_frame, text="Delete my account", command=self.create_confirm_delete_account_page, fg="red")
+        self.delete_account_button.pack(side=tk.LEFT, padx=5)
+        
+        self.logout_button = tk.Button(account_buttons_frame, text="Log out", command=self.logout)
+        self.logout_button.pack(side=tk.LEFT, padx=5)
 
         self.accounts_listbox = tk.Listbox(self.accounts_frame)
         self.accounts_listbox.pack(padx=10, pady=5, fill=tk.BOTH, expand=True)
@@ -149,26 +155,39 @@ class ClientGUI:
         self.messages_frame = tk.Frame(self.chat_frame)
         self.messages_frame.grid(row=0, column=1, sticky="nsew")
 
-        self.messages_label = tk.Label(self.messages_frame, text="Messages")
+        self.messages_label = tk.Label(self.messages_frame, text=self.username + "'s messages")
         self.messages_label.pack(padx=10, pady=5)
-
-        self.delete_button = tk.Button(self.messages_frame, text="Delete", command=self.delete_messages)
-        self.delete_button.pack(padx=10, pady=5)
 
         self.undelivered_label = tk.Label(self.messages_frame, text="Undelivered messages: 0")
         self.undelivered_label.pack(padx=10, pady=5)
 
-        self.num_messages_entry = tk.Entry(self.messages_frame)
-        self.num_messages_entry.pack(padx=10, pady=5)
-        self.go_button = tk.Button(self.messages_frame, text="See undelivered messages", command=self.load_undelivered_messages)
-        self.go_button.pack(padx=10, pady=5)
+        undelivered_frame = tk.Frame(self.messages_frame)
+        undelivered_frame.pack(pady=5)
+        
+        see_label = tk.Label(undelivered_frame, text="See")
+        see_label.pack(side=tk.LEFT, padx=2)
+        
+        self.num_messages_entry = tk.Entry(undelivered_frame, width=5)
+        self.num_messages_entry.pack(side=tk.LEFT, padx=2)
+        
+        msg_label = tk.Label(undelivered_frame, text="undelivered messages")
+        msg_label.pack(side=tk.LEFT, padx=2)
+        
+        self.go_button = tk.Button(undelivered_frame, text="Go", command=self.load_undelivered_messages, state=tk.DISABLED)
+        self.go_button.pack(side=tk.LEFT, padx=2)
 
         self.messages_listbox = tk.Listbox(self.messages_frame, selectmode=tk.MULTIPLE)
         self.messages_listbox.pack(padx=10, pady=5, fill=tk.BOTH, expand=True)
         # self.messages_listbox.bind('<<ListboxSelect>>', self.on_select)
 
-        self.load_more_button = tk.Button(self.messages_frame, text="Load more", command=self.load_more_messages)
-        self.load_more_button.pack(padx=10, pady=5)
+        button_frame = tk.Frame(self.messages_frame)
+        button_frame.pack(pady=5)
+
+        self.load_more_button = tk.Button(button_frame, text="Load more", command=self.load_more_messages)
+        self.load_more_button.pack(side=tk.LEFT, padx=5)
+
+        self.delete_button = tk.Button(button_frame, text="Delete messages", command=self.delete_messages)
+        self.delete_button.pack(side=tk.LEFT, padx=5)
 
         # Third column: Message display and input
         self.message_display_frame = tk.Frame(self.chat_frame)
@@ -194,6 +213,9 @@ class ClientGUI:
         self.load_page_data()
 
 
+    def logout(self):
+        self.create_login_page()
+    
     def create_confirm_delete_account_page(self):
         # Create a dialog window
         self.dialog = tk.Toplevel(self.master)
@@ -286,6 +308,7 @@ class ClientGUI:
             
             self.messages_listbox.insert(tk.END, display_text)
         self.undelivered_label.config(text=f"Undelivered messages: {total_undelivered}")
+        self.go_button.config(state=tk.NORMAL if total_undelivered > 0 else tk.DISABLED)
 
     
     # ===================================================================
@@ -352,6 +375,7 @@ class ClientGUI:
     def load_undelivered_messages(self):
         num_messages = int(self.num_messages_entry.get())
         if num_messages < 1 or num_messages > int(self.num_undelivered):
+            tk.messagebox.showwarning("Invalid Input", f"Please enter a number between 1 and {self.num_undelivered} (your current number of undelivered messages).")
             return
         request = {
             "action": "load_undelivered",
