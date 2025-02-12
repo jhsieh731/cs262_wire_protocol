@@ -7,6 +7,7 @@ def set_logger(name, log_file):
     logger.setLevel(logging.DEBUG)  # Capture all levels
 
     # Create file handler
+    log_file = "logs/" + log_file
     fh = logging.FileHandler(log_file)
     fh.setLevel(logging.DEBUG)  # Capture all levels
 
