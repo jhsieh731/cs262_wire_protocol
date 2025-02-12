@@ -2,6 +2,9 @@ import sqlite3
 from typing import List, Tuple, Optional
 import os
 from datetime import datetime
+from logger import set_logger
+
+logger = set_logger("db", "db.log")
 
 class MessageDatabase:
     def __init__(self, db_file: str = "messages.db"):
@@ -22,7 +25,7 @@ class MessageDatabase:
             self.conn = sqlite3.connect(self.db_file)
             return self.conn
         except sqlite3.Error as e:
-            print(f"Error connecting to database: {e}")
+            logger.error(f"Error connecting to database: {e}")
             return None
 
     def create_tables(self):
@@ -57,9 +60,9 @@ class MessageDatabase:
                 cursor.execute(create_messages_sql)
                 conn.commit()
             else:
-                print("Error: Could not establish database connection")
+                logger.error("Error: Could not establish database connection")
         except sqlite3.Error as e:
-            print(f"Error creating table: {e}")
+            logger.error(f"Error creating table: {e}")
         finally:
             if conn:
                 conn.close()
@@ -88,18 +91,18 @@ class MessageDatabase:
             # Check if the username and password match records
             cursor.execute(login_sql, (username, password))
             res = cursor.fetchall()
-            print("res: ", res)
+            logger.info(f"res: {res}")
 
             # Check if multiple users have the same username and password
             if len(res) > 1:
-                print("Error: multiple users with the same username and password")
+                logger.error("Error: multiple users with the same username and password")
                 return []
             user = res[0] if len(res) == 1 else None
 
             # login
             if user:
                 # update socket
-                print("logging in, socket: ", socket, len(socket))
+                logger.info(f"logging in, socket: {socket}, length: {len(socket)}")
                 cursor.execute(update_socket_sql, (socket, user["userid"]))
                 conn.commit()
                 return [dict(user)]
@@ -112,12 +115,12 @@ class MessageDatabase:
                 conn.commit()
                 cursor.execute(login_sql, (username, password))
                 new_user = cursor.fetchone()
-                print("new_user: ", new_user)
+                logger.info(f"new_user: {new_user}")
                 if new_user:
                     return [dict(new_user)]
             return []
         except sqlite3.Error as e:
-            print(f"Error in login_or_create_account: {e}")
+            logger.error(f"Error in login_or_create_account: {e}")
             return []
         finally:
             if conn:
@@ -143,7 +146,7 @@ class MessageDatabase:
             return True, "", str(user[0])
             
         except sqlite3.Error as e:
-            print(f"Error getting user UUID: {e}")
+            logger.error(f"Error getting user UUID: {e}")
             return False, str(e), ""
         finally:
             if conn:
@@ -167,7 +170,7 @@ class MessageDatabase:
             return None
             
         except sqlite3.Error as e:
-            print(f"Error getting associated socket: {e}")
+            logger.error(f"Error getting associated socket: {e}")
             return None
         finally:
             if conn:
@@ -198,7 +201,7 @@ class MessageDatabase:
             return True, ""
             
         except sqlite3.Error as e:
-            print(f"Error storing message: {e}")
+            logger.error(f"Error storing message: {e}")
             return False, str(e)
         finally:
             if conn:
@@ -210,10 +213,10 @@ class MessageDatabase:
         Returns (list of user dictionaries, total count of matching users)
         """
         try:
-            print(f"\nDB Searching for term: '{search_term}' offset {offset}")
+            logger.info(f"DB Searching for term: '{search_term}' offset {offset}")
             conn = self.connect()
             if conn is None:
-                print("Database connection failed")
+                logger.error("Database connection failed")
                 return [], 0
                 
             cursor = conn.cursor()
@@ -226,7 +229,7 @@ class MessageDatabase:
             cursor.execute(count_sql, (search_term,))
             
             total_count = cursor.fetchone()[0]
-            print(f"Total matching users: {total_count}")
+            logger.info(f"Total matching users: {total_count}")
             
             # Get paginated results
             search_sql = """
@@ -239,11 +242,11 @@ class MessageDatabase:
             cursor.execute(search_sql, (search_term, offset))
             
             results = [list(row) for row in cursor.fetchall()]
-            print(f"\nQuery results: {results}")
+            logger.info(f"Query results: {results}")
             return results, total_count
             
         except sqlite3.Error as e:
-            print(f"Error searching accounts: {e}")
+            logger.error(f"Error searching accounts: {e}")
             return [], 0
         finally:
             if conn:
@@ -264,7 +267,7 @@ class MessageDatabase:
             return result[0] if result else None
             
         except sqlite3.Error as e:
-            print(f"Error getting user password: {e}")
+            logger.error(f"Error getting user password: {e}")
             return None
         finally:
             if conn:
@@ -277,17 +280,17 @@ class MessageDatabase:
         try:
             conn = self.connect()
             if conn is None:
-                print("Failed to connect to database in delete_user")
+                logger.error("Failed to connect to database in delete_user")
                 return False
 
             cursor = conn.cursor()
-            print(f"Attempting to delete user with UUID: {uuid}")
+            logger.info(f"Attempting to delete user with UUID: {uuid}")
             
             # First check if user exists
             cursor.execute("SELECT userid FROM users WHERE userid = ?", (uuid,))
             user = cursor.fetchone()
             if not user:
-                print(f"No user found with UUID: {uuid}")
+                logger.error(f"No user found with UUID: {uuid}")
                 return False
                 
             # Delete the user
@@ -297,14 +300,14 @@ class MessageDatabase:
             # Verify deletion
             cursor.execute("SELECT userid FROM users WHERE userid = ?", (uuid,))
             if cursor.fetchone() is None:
-                print(f"Successfully deleted user with UUID: {uuid}")
+                logger.info(f"Successfully deleted user with UUID: {uuid}")
                 return True
             else:
-                print(f"Failed to delete user with UUID: {uuid} - user still exists")
+                logger.error(f"Failed to delete user with UUID: {uuid} - user still exists")
                 return False
             
         except sqlite3.Error as e:
-            print(f"Error deleting user: {e}")
+            logger.error(f"Error deleting user: {e}")
             return False
         finally:
             if conn:
@@ -314,7 +317,7 @@ class MessageDatabase:
         """
         Get a user's information by their UUID.
         """
-        print(f"Getting user info for UUID: {uuid}")
+        logger.info(f"Getting user info for UUID: {uuid}")
         try:
             conn = self.connect()
             if conn is None:
@@ -323,11 +326,11 @@ class MessageDatabase:
             cursor = conn.cursor()
             cursor.execute("SELECT username FROM users WHERE userid = ?", (uuid,))
             user = cursor.fetchone()
-            print(416, user)
+            logger.info(f"User info (line 416): {user}")
             return user[0] if user else None
             
         except sqlite3.Error as e:
-            print(f"Error getting user info: {e}")
+            logger.error(f"Error getting user info: {e}")
             return {}
         finally:
             if conn:
@@ -375,14 +378,14 @@ class MessageDatabase:
             cursor = conn.cursor()
             cursor.execute(delivered_sql, (user_uuid, user_uuid, num_messages))
             messages = cursor.fetchall()
-            print("messages: ", messages)
+            logger.info(f"messages: {messages}")
             cursor.execute(pending_sql, (user_uuid,))
             pending = cursor.fetchone()[0]
-            print("pending: ", pending)
+            logger.info(f"pending: {pending}")
             return [list(message) for message in messages], pending
             
         except sqlite3.Error as e:
-            print(f"Error loading messages: {e}")
+            logger.error(f"Error loading messages: {e}")
             return []
         finally:
             if conn:
@@ -405,24 +408,24 @@ class MessageDatabase:
             cursor = conn.cursor()
             for msg_id in msg_ids:
                 cursor.execute("DELETE FROM messages WHERE msgid = ?", (msg_id,))
-                print(f"Deleted message: {msg_id}")
+                logger.info(f"Deleted message: {msg_id}")
             conn.commit()  # Commit the transaction before verification
-            print(f"Deleted messages: {msg_ids}")
+            logger.info(f"Deleted messages: {msg_ids}")
 
             # verify deletion
             sql = "SELECT COUNT(msgid) AS num_remaining FROM messages WHERE msgid IN ({})".format(",".join("?" * len(msg_ids)))
-            print("SQL:", sql)
+            logger.info(f"SQL: {sql}")
             cursor.execute(sql, msg_ids)
-            print(460)
+            logger.info("Line 460: Checking remaining messages")
             num_remaining = cursor.fetchone()[0]
-            print("NUM REMAINING:", num_remaining)
+            logger.info(f"Number of messages remaining: {num_remaining}")
 
             num_deleted = len(msg_ids) - num_remaining
-            print(f"Deleted {num_deleted} messages")
+            logger.info(f"Deleted {num_deleted} messages")
             return num_deleted
 
         except sqlite3.Error as e:
-            print(f"Error deleting messages: {e}")
+            logger.error(f"Error deleting messages: {e}")
             return 0
         finally:
             if conn:
@@ -469,7 +472,7 @@ class MessageDatabase:
             return [dict(message) for message in messages]
 
         except sqlite3.Error as e:
-            print(f"Error loading undelivered messages: {e}")
+            logger.error(f"Error loading undelivered messages: {e}")
             return []
         finally:
             if conn:

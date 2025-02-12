@@ -59,7 +59,7 @@ class Message:
 
     def _write(self):
         """Write to the socket."""
-        logger.info("_write")
+        logger.info("Writing to socket")
         if self._send_buffer:
             logger.info(f"Sending {self._send_buffer!r} to {self.addr}")
             try:
@@ -157,22 +157,19 @@ class Message:
         try:
             self.selector.unregister(self.sock)
         except Exception as e:
-            logger.info(
-                f"Error: selector.unregister() exception for "
-                f"{self.addr}: {e!r}"
-            )
+            logger.error(f"Error: selector.unregister() exception for {self.addr}: {e!r}")
 
         try:
             self.sock.close()
         except OSError as e:
-            logger.info(f"Error: socket.close() exception for {self.addr}: {e!r}")
+            logger.error(f"Error: socket.close() exception for {self.addr}: {e!r}")
         finally:
             # Delete reference to socket object for garbage collection
             self.sock = None
 
     def queue_request(self):
         """Prepare a request to be sent to the server."""
-        logger.info("queue_request")
+        logger.info("Queuing request")
         # Reset state before queuing a new request
         self.reset_state()
         
@@ -180,7 +177,7 @@ class Message:
         if self.protocol_mode == "json":
             content = self._json_encode(self.request["content"], "utf-8")
         elif self.protocol_mode == "custom":
-            logger.info(166, self.request["content"])
+            logger.info(f"Line 166 - Request content: {self.request['content']}")
             content = self.custom_protocol.serialize(self.request["content"])
         
         # Create the message
@@ -197,7 +194,7 @@ class Message:
 
     def process_protoheader(self):
         """Process the protocol header (read pipeline step 1)."""
-        logger.info("process_protoheader")
+        logger.info("Processing protocol header")
         version_len = 1  # 1 byte for version
         protocol_len = 1  # 1 byte for protocol type
         hdrlen = 2  # fixed length for header length
@@ -218,7 +215,7 @@ class Message:
             
         # Then process header length
         if len(self._recv_buffer) >= hdrlen:
-            logger.info("len of buffer: ", len(self._recv_buffer))
+            logger.info(f"len of buffer: {len(self._recv_buffer)}")
             self._header_len = struct.unpack(
                 ">H", self._recv_buffer[:hdrlen]
             )[0]
@@ -286,7 +283,7 @@ class Message:
             # Done reading, reset Message class for next message
             self.reset_state()
         except Exception as e:
-            logger.info(f"Error decoding response: {e}")
-            logger.info(f"Raw data: {data}")
+            logger.error(f"Error decoding response: {e}")
+            logger.error(f"Raw data that caused error: {data}")
 
         
