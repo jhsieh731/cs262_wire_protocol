@@ -31,23 +31,23 @@ def initialize_server(host, port):
         logger.error(f"Error initializing server: {e}")
         sys.exit(1)
 
-def accept_wrapper(sock, accepted_versions):
+def accept_wrapper(sock, accepted_versions, protocol):
     """Accept a new connection and register it with the selector."""
     conn, addr = sock.accept()  # Should be ready to read
     logger.info(f"Accepted connection from {addr}")
     conn.setblocking(False)
-    message = Message(sel, conn, addr, accepted_versions)
+    message = Message(sel, conn, addr, accepted_versions, protocol)
     sel.register(conn, selectors.EVENT_READ, data=message)
 
 
-def run_server(accepted_versions):
+def run_server(accepted_versions, protocol):
     """Run the server event loop."""
     try:
         while True:
             events = sel.select(timeout=None)
             for key, mask in events:
                 if key.data is None:
-                    accept_wrapper(key.fileobj, accepted_versions)
+                    accept_wrapper(key.fileobj, accepted_versions, protocol)
                 else:
                     message = key.data
                     try:
@@ -80,7 +80,7 @@ if __name__ == '__main__':
             print("Error: Please use a port number >= 1024")
             sys.exit(1)
         lsock = initialize_server(host, port)
-        run_server(accepted_versions)
+        run_server(accepted_versions, protocol)
     except Exception as e:
         logger.info(f"Error: {e}")
         sys.exit(1)

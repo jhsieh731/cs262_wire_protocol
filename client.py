@@ -12,13 +12,15 @@ logger = set_logger("client", "client.log")
 sel = None
 host = None
 port = None
+protocol = None
 
-def initialize_client(server_host, server_port):
+def initialize_client(server_host, server_port, input_protocol):
     """Initialize the client with the given host and port."""
-    global sel, host, port
+    global sel, host, port, protocol
     sel = selectors.DefaultSelector()
     host = server_host
     port = server_port
+    protocol = input_protocol
     return sel
 
 # Send message to the server
@@ -36,7 +38,7 @@ def send_to_server(request):
 # Thread for handling server communication
 def network_thread(request):
     logger.info(request)
-    start_connection(host, port, gui, request)
+    start_connection(gui, request)
     try:
         while True:
             events = sel.select(timeout=1)
@@ -64,32 +66,33 @@ root = tk.Tk()
 gui = ClientGUI(root, send_to_server, network_thread)
 
 # Networking Functions
-def start_connection(host, port, gui, request):
+def start_connection(gui, request):
     addr = (host, port)
     logger.info(f"Starting connection to {addr}")
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.setblocking(False)
     sock.connect_ex(addr)
     events = selectors.EVENT_READ | selectors.EVENT_WRITE
-    message = msg_client.Message(sel, sock, addr, gui, request)
+    message = msg_client.Message(sel, sock, addr, gui, request, protocol)
     sel.register(sock, events, data=message)
 
 
 
 
 if __name__ == '__main__':
-    if len(sys.argv) != 3:
-        logger.info(f"Usage: {sys.argv[0]} <host> <port>")
+    if len(sys.argv) != 4:
+        logger.info(f"Usage: {sys.argv[0]} <host> <port> <protocol>")
         sys.exit(1)
     try:
         server_host = sys.argv[1]
         server_port = int(sys.argv[2])
+        input_protocol = sys.argv[3]
     except ValueError:
         logger.info(f"Error: Port must be a number")
         sys.exit(1)
     
     # Initialize client
-    initialize_client(server_host, server_port)
+    initialize_client(server_host, server_port, input_protocol)
     
     # Run the Tkinter main loop
     root.mainloop()
