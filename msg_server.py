@@ -149,7 +149,7 @@ class Message:
             logger.info(f"Account lookup result: {accounts}")
             if (len(accounts) != 1):
                 response_content = {
-                    "message": "Please try again",
+                    "message": "An account with that username and password doesn't exist.",
                 }
                 action = "login_error"
             else:
