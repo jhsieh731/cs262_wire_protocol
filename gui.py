@@ -96,7 +96,7 @@ class ClientGUI:
         self.search_button.pack(side=tk.LEFT)
 
         # Delete Account Button
-        self.delete_account_button = tk.Button(self.accounts_frame, text="Delete my account", command=self.create_confirm_delete_account, fg="red")
+        self.delete_account_button = tk.Button(self.accounts_frame, text="Delete my account", command=self.create_confirm_delete_account_page, fg="red")
         self.delete_account_button.pack(padx=10, pady=5)
 
         self.accounts_listbox = tk.Listbox(self.accounts_frame)
@@ -161,7 +161,7 @@ class ClientGUI:
 
     
 
-    def create_confirm_delete_account(self):
+    def create_confirm_delete_account_page(self):
         # Create a dialog window
         self.dialog = tk.Toplevel(self.master)
         self.dialog.title("Confirm Account Deletion")

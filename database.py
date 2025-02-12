@@ -190,6 +190,16 @@ class MessageDatabase:
 
             cursor = conn.cursor()
             
+            # Validate sender UUID exists
+            cursor.execute("SELECT COUNT(*) FROM users WHERE userid = ?", (sender_uuid,))
+            if cursor.fetchone()[0] == 0:
+                return False, f"Invalid sender UUID: {sender_uuid}"
+            
+            # Validate recipient UUID exists
+            cursor.execute("SELECT COUNT(*) FROM users WHERE userid = ?", (recipient_uuid,))
+            if cursor.fetchone()[0] == 0:
+                return False, f"Invalid recipient UUID: {recipient_uuid}"
+            
             # Set message status based on recipient's socket status
             status = "delivered" if status else "pending"
             

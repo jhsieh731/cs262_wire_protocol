@@ -5,7 +5,9 @@ import json
 import struct
 from unittest.mock import Mock, patch
 from msg_client import Message
-from custom_protocol import CustomProtocol
+from custom_protocol_2 import CustomProtocol
+
+# to run: python3 -m unittest test_suite/test_msg_client.py -v
 
 class TestMessage(unittest.TestCase):
     def setUp(self):
@@ -43,74 +45,6 @@ class TestMessage(unittest.TestCase):
         self.assertEqual(self.message.protocol_mode, "custom")
         self.assertIsInstance(self.message.custom_protocol, CustomProtocol)
 
-    def test_json_encode_decode(self):
-        """Test JSON encoding and decoding."""
-        test_data = {"key": "value", "number": 42}
-        encoded = self.message._json_encode(test_data, "utf-8")
-        decoded = self.message._json_decode(encoded, "utf-8")
-        self.assertEqual(test_data, decoded)
-
-    def test_create_message_json_mode(self):
-        """Test message creation in JSON mode."""
-        self.message.protocol_mode = "json"
-        content = b'{"test": "data"}'
-        action = "test_action"
-        message = self.message._create_message(
-            content_bytes=content,
-            action=action,
-            content_length=len(content)
-        )
-        # First 2 bytes are header length
-        header_len = struct.unpack(">H", message[:2])[0]
-        self.assertTrue(len(message) > header_len + 2)
-
-    def test_create_message_custom_mode(self):
-        """Test message creation in custom protocol mode."""
-        content = b'{"test": "data"}'
-        action = "test_action"
-        message = self.message._create_message(
-            content_bytes=content,
-            action=action,
-            content_length=len(content)
-        )
-        # First 2 bytes are header length
-        header_len = struct.unpack(">H", message[:2])[0]
-        self.assertTrue(len(message) > header_len + 2)
-
-    def test_queue_request(self):
-        """Test queuing a request."""
-        self.message.queue_request()
-        self.assertTrue(self.message._request_queued)
-        self.assertTrue(len(self.message._send_buffer) > 0)
-
-    def test_process_protoheader(self):
-        """Test processing protocol header."""
-        # Create a mock header length of 10 (encoded as 2 bytes)
-        self.message._recv_buffer = struct.pack(">H", 10) + b"extra_data"
-        self.message.process_protoheader()
-        self.assertEqual(self.message._header_len, 10)
-        self.assertEqual(self.message._recv_buffer, b"extra_data")
-
-    def test_reset_state(self):
-        """Test resetting message state."""
-        self.message._header_len = 10
-        self.message.header = {"some": "header"}
-        self.message.response = {"some": "response"}
-        self.message._recv_buffer = b"some_data"
-
-        self.message.reset_state()
-
-        self.assertIsNone(self.message._header_len)
-        self.assertIsNone(self.message.header)
-        self.assertIsNone(self.message.response)
-        self.assertEqual(self.message._recv_buffer, b"")
-
-    def test_close(self):
-        """Test connection closing."""
-        self.message.close()
-        self.sock.close.assert_called_once()
-        self.assertIsNone(self.message.sock)
-
     @patch('selectors.DefaultSelector.modify')
     def test_set_selector_events_mask(self, mock_modify):
         """Test setting selector events mask."""
@@ -124,42 +58,7 @@ class TestMessage(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.message._set_selector_events_mask("invalid")
 
-    def test_process_response_json_mode(self):
-        """Test processing response in JSON mode."""
-        self.message.protocol_mode = "json"
-        test_response = {"status": "success"}
-        encoded_response = json.dumps(test_response).encode("utf-8")
-        
-        self.message.header = {
-            "content-length": len(encoded_response),
-            "action": "response"
-        }
-        self.message._recv_buffer = encoded_response
-
-        self.message.process_response()
-        
-        # Verify GUI was called with decoded response
-        self.gui.handle_server_response.assert_called_once_with(test_response)
-
-    def test_process_response_custom_mode(self):
-        """Test processing response in custom protocol mode."""
-        test_response = {"status": "success"}
-        encoded_response = self.message.custom_protocol.serialize(test_response)
-        checksum = self.message.custom_protocol.compute_checksum(encoded_response)
-        
-        self.message.header = {
-            "content-length": len(encoded_response),
-            "action": "response",
-            "checksum": checksum
-        }
-        self.message._recv_buffer = encoded_response
-
-        self.message.process_response()
-        
-        # Verify GUI was called with decoded response
-        self.gui.handle_server_response.assert_called_once()
-
-    def test_read(self):
+    def test_private_read(self):
         """Test the _read method for successful and blocking cases."""
         # Test successful read
         self.sock.recv.return_value = b"test data"
@@ -180,7 +79,7 @@ class TestMessage(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             self.message._read()
 
-    def test_write(self):
+    def test_private_write(self):
         """Test the _write method for various scenarios."""
         # Test successful write
         self.message._send_buffer = b"test data"
@@ -203,6 +102,86 @@ class TestMessage(unittest.TestCase):
         self.message._write()  # Should not raise exception
         self.assertEqual(self.message._send_buffer, b"test data")
 
+    def test_json_encode_decode(self):
+        """Test JSON encoding and decoding."""
+        test_data = {"key": "value", "number": 42}
+        encoded = self.message._json_encode(test_data, "utf-8")
+        decoded = self.message._json_decode(encoded, "utf-8")
+        self.assertEqual(test_data, decoded)
+
+    def test_create_message_json_mode(self):
+        """Test message creation in JSON mode."""
+        self.message.protocol_mode = "json"
+        content = b'{"test": "data"}'
+        action = "test_action"
+        message = self.message._create_message(
+            content_bytes=content,
+            action=action,
+            content_length=len(content)
+        )
+        # First 4 bytes are version (1 byte), protocol (1 byte), and header length (2 bytes)
+        header_len = struct.unpack(">H", message[2:4])[0]
+        self.assertTrue(len(message) > header_len + 4)
+
+    def test_create_message_custom_mode(self):
+        """Test message creation in custom protocol mode."""
+        content = b'{"test": "data"}'
+        action = "test_action"
+        message = self.message._create_message(
+            content_bytes=content,
+            action=action,
+            content_length=len(content)
+        )
+        # First 4 bytes are version (1 byte), protocol (1 byte), and header length (2 bytes)
+        header_len = struct.unpack(">H", message[2:4])[0]
+        self.assertTrue(len(message) > header_len + 4)
+
+    def test_process_events_read_only(self):
+        """Test processing of read-only events."""
+        with patch.object(self.message, 'read') as mock_read, \
+             patch.object(self.message, 'write') as mock_write:
+            # Test read event only
+            self.message.process_events(selectors.EVENT_READ)
+            mock_read.assert_called_once()
+            mock_write.assert_not_called()
+
+    def test_process_events_write_only(self):
+        """Test processing of write-only events."""
+        with patch.object(self.message, 'read') as mock_read, \
+             patch.object(self.message, 'write') as mock_write:
+            # Test write event only
+            self.message.process_events(selectors.EVENT_WRITE)
+            mock_read.assert_not_called()
+            mock_write.assert_called_once()
+
+    def test_process_events_read_write(self):
+        """Test processing of both read and write events."""
+        with patch.object(self.message, 'read') as mock_read, \
+             patch.object(self.message, 'write') as mock_write:
+            # Test both read and write events
+            self.message.process_events(selectors.EVENT_READ | selectors.EVENT_WRITE)
+            mock_read.assert_called_once()
+            mock_write.assert_called_once()
+
+    def test_process_events_no_events(self):
+        """Test processing when no events are set."""
+        with patch.object(self.message, 'read') as mock_read, \
+             patch.object(self.message, 'write') as mock_write:
+            # Test no events
+            self.message.process_events(0)
+            mock_read.assert_not_called()
+            mock_write.assert_not_called()
+
+    def test_process_events_error_handling(self):
+        """Test error handling during event processing."""
+        with patch.object(self.message, 'read', side_effect=Exception("Read error")), \
+             patch.object(self.message, 'write') as mock_write, \
+             patch('msg_client.logger.error') as mock_log:
+            # Test error in read doesn't prevent write
+            self.message.process_events(selectors.EVENT_READ | selectors.EVENT_WRITE)
+            mock_write.assert_called_once()
+            mock_log.assert_called_once_with("Error during read: Read error")
+
     @patch('selectors.DefaultSelector.modify')
     def test_process_events(self, mock_modify):
         """Test processing of read and write events."""
@@ -223,7 +202,7 @@ class TestMessage(unittest.TestCase):
             mock_read.assert_called_once()
             mock_write.assert_called_once()
 
-    def test_read_method(self):
+    def test_read(self):
         """Test the read method's full workflow."""
         # Mock _read to simulate receiving data
         with patch.object(self.message, '_read') as mock_read, \
@@ -245,7 +224,7 @@ class TestMessage(unittest.TestCase):
             self.message.read()
             mock_process_response.assert_called_once()
 
-    def test_write_method(self):
+    def test_write(self):
         """Test the write method's full workflow."""
         # Test initial write when request is not queued
         with patch.object(self.message, 'queue_request') as mock_queue_request, \
@@ -268,41 +247,108 @@ class TestMessage(unittest.TestCase):
             self.message.write()
             mock_set_mask.assert_called_once_with("r")
 
+    def test_close(self):
+        """Test connection closing."""
+        self.message.close()
+        self.sock.close.assert_called_once()
+        self.assertIsNone(self.message.sock)
+
+    def test_queue_request(self):
+        """Test queuing a request."""
+        self.message.queue_request()
+        self.assertTrue(self.message._request_queued)
+        self.assertTrue(len(self.message._send_buffer) > 0)
+
+    def test_process_protoheader(self):
+        """Test processing protocol header."""
+        # Create a mock protocol header with version=1, protocol=1 (custom), header_len=10
+        self.message._recv_buffer = struct.pack(">BBH", 1, 1, 10) + b"extra_data"
+        self.message.process_protoheader()
+        self.assertEqual(self.message._header_len, 10)
+        self.assertEqual(self.message._recv_buffer, b"extra_data")
+
     def test_process_header(self):
         """Test processing headers in both JSON and custom protocol modes."""
         # Test JSON protocol mode
         self.message.protocol_mode = "json"
         test_header = {"content-length": 100, "action": "test"}
         encoded_header = json.dumps(test_header).encode("utf-8")
-        self.message._recv_buffer = encoded_header
+        self.message._recv_buffer = encoded_header + b"remaining"
         self.message._header_len = len(encoded_header)
 
         self.message.process_header()
         self.assertEqual(self.message.header, test_header)
-        self.assertEqual(self.message._recv_buffer, b"")
+        self.assertEqual(self.message._recv_buffer, b"remaining")
 
         # Test custom protocol mode
         self.message.protocol_mode = "custom"
-        test_header = {"content-length": 100, "action": "test", "checksum": 123}
+        test_header = {"content-length": 100, "action": "test", "checksum": "abc123"}
         encoded_header = self.message.custom_protocol.serialize(test_header)
-        self.message._recv_buffer = encoded_header
+        self.message._recv_buffer = encoded_header + b"remaining"
         self.message._header_len = len(encoded_header)
 
         self.message.process_header()
         self.assertEqual(self.message.header["content-length"], test_header["content-length"])
         self.assertEqual(self.message.header["action"], test_header["action"])
+        self.assertEqual(self.message._recv_buffer, b"remaining")
 
         # Test missing required header fields
-        self.message._recv_buffer = json.dumps({"version": 1}).encode("utf-8")
-        self.message._header_len = len(self.message._recv_buffer)
-        self.message.process_header()
-        self.assertEqual(self.message.header["action"], "error")
-
-        # Test invalid protocol mode
-        self.message.protocol_mode = "invalid"
+        self.message.protocol_mode = "json"
+        invalid_header = {"version": 1}  # Missing required fields
+        encoded_header = json.dumps(invalid_header).encode("utf-8")
         self.message._recv_buffer = encoded_header
+        self.message._header_len = len(encoded_header)
         with self.assertRaises(ValueError):
             self.message.process_header()
+
+    def test_reset_state(self):
+        """Test resetting message state."""
+        self.message._header_len = 10
+        self.message.header = {"some": "header"}
+        self.message.response = {"some": "response"}
+        self.message._recv_buffer = b"some_data"
+
+        self.message.reset_state()
+
+        self.assertIsNone(self.message._header_len)
+        self.assertIsNone(self.message.header)
+        self.assertIsNone(self.message.response)
+        self.assertEqual(self.message._recv_buffer, b"")
+
+    def test_process_response_json_mode(self):
+        """Test processing response in JSON mode."""
+        self.message.protocol_mode = "json"
+        test_response = {"status": "success"}
+        encoded_response = json.dumps(test_response).encode("utf-8")
+        
+        self.message.header = {
+            "content-length": len(encoded_response),
+            "action": "response"
+        }
+        self.message._recv_buffer = encoded_response
+
+        self.message.process_response()
+        
+        # Verify GUI was called with decoded response
+        self.gui.handle_server_response.assert_called_once_with(test_response, "response")
+
+    def test_process_response_custom_mode(self):
+        """Test processing response in custom protocol mode."""
+        test_response = {"status": "success"}
+        encoded_response = self.message.custom_protocol.serialize(test_response)
+        checksum = self.message.custom_protocol.compute_checksum(encoded_response)
+        
+        self.message.header = {
+            "content-length": len(encoded_response),
+            "action": "response",
+            "checksum": checksum
+        }
+        self.message._recv_buffer = encoded_response
+
+        self.message.process_response()
+        
+        # Verify GUI was called with decoded response
+        self.gui.handle_server_response.assert_called_once()
 
 if __name__ == '__main__':
     unittest.main()

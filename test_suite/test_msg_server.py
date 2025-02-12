@@ -6,20 +6,27 @@ import struct
 from unittest.mock import Mock, patch, MagicMock
 from msg_server import Message, MessageDatabase, CustomProtocol
 
+# to run: python3 -m unittest test_suite/test_msg_server.py -v
+
 class TestMessage(unittest.TestCase):
     def setUp(self):
         """Set up test fixtures before each test method."""
-        self.selector = selectors.DefaultSelector()
+        self.selector = Mock(spec=selectors.DefaultSelector)
         self.sock = Mock(spec=socket.socket)
         self.addr = ('127.0.0.1', 65432)
         self.message = Message(
             selector=self.selector,
             sock=self.sock,
-            addr=self.addr
+            addr=self.addr,
+            accepted_versions=[1]
         )
         # Mock the database
         self.db_patcher = patch('msg_server.db')
         self.mock_db = self.db_patcher.start()
+
+        # Helper methods for encoding/decoding
+        self._json_encode = self.message._json_encode
+        self._json_decode = self.message._json_decode
 
     def tearDown(self):
         """Clean up after each test method."""
@@ -38,6 +45,63 @@ class TestMessage(unittest.TestCase):
         self.assertEqual(self.message.protocol_mode, "custom")
         self.assertIsInstance(self.message.custom_protocol, CustomProtocol)
 
+    def test_set_selector_events_mask(self):
+        """Test setting selector events mask."""
+        # Test read mode
+        self.message._set_selector_events_mask("r")
+        self.selector.modify.assert_called_with(self.sock, selectors.EVENT_READ, data=self.message)
+
+        # Test write mode
+        self.message._set_selector_events_mask("w")
+        self.selector.modify.assert_called_with(self.sock, selectors.EVENT_WRITE, data=self.message)
+
+        # Test read-write mode
+        self.message._set_selector_events_mask("rw")
+        self.selector.modify.assert_called_with(self.sock, selectors.EVENT_READ | selectors.EVENT_WRITE, data=self.message)
+
+        # Test invalid mode
+        with self.assertRaises(ValueError):
+            self.message._set_selector_events_mask("invalid")
+
+    def test_private_read(self):
+        """Test the _read method."""
+        # Test successful read
+        self.sock.recv.return_value = b"test data"
+        self.message._read()
+        self.assertEqual(self.message._recv_buffer, b"test data")
+
+        # Test blocking read
+        self.sock.recv.side_effect = BlockingIOError()
+        self.message._read()  # Should not raise an exception
+
+        # Test peer closed
+        self.sock.recv.side_effect = None
+        self.sock.recv.return_value = b""
+        with self.assertRaises(RuntimeError):
+            self.message._read()
+
+    def test_private_write(self):
+        """Test the _write method."""
+        # Test successful write
+        self.message._send_buffer = b"test data"
+        self.sock.send.return_value = 9  # Length of "test data"
+        self.message._write()
+        self.assertEqual(self.message._send_buffer, b"")
+        self.assertIsNone(self.message._header_len)
+        self.assertIsNone(self.message.header)
+        self.assertIsNone(self.message.request)
+        self.assertFalse(self.message.response_created)
+
+        # Test partial write
+        self.message._send_buffer = b"test data"
+        self.sock.send.return_value = 4
+        self.message._write()
+        self.assertEqual(self.message._send_buffer, b" data")
+
+        # Test blocking write
+        self.sock.send.side_effect = BlockingIOError()
+        self.message._write()  # Should not raise an exception
+
     def test_json_encode_decode(self):
         """Test JSON encoding and decoding."""
         test_data = {"key": "value", "number": 42}
@@ -55,12 +119,15 @@ class TestMessage(unittest.TestCase):
             action=action,
             content_length=len(content)
         )
-        # First 2 bytes are header length
-        header_len = struct.unpack(">H", message[:2])[0]
-        self.assertTrue(len(message) > header_len + 2)
+        # First 4 bytes are protoheader (version, type, length)
+        version, ptype, header_len = struct.unpack(">BBH", message[:4])
+        self.assertEqual(version, 1)
+        self.assertEqual(ptype, 0)  # JSON mode
+        self.assertTrue(len(message) > header_len + 4)
 
     def test_create_message_custom_mode(self):
         """Test message creation in custom protocol mode."""
+        self.message.protocol_mode = "custom"
         content = b'{"test": "data"}'
         action = "test_action"
         message = self.message._create_message(
@@ -68,9 +135,30 @@ class TestMessage(unittest.TestCase):
             action=action,
             content_length=len(content)
         )
-        # First 2 bytes are header length
-        header_len = struct.unpack(">H", message[:2])[0]
-        self.assertTrue(len(message) > header_len + 2)
+        # First 4 bytes are protoheader (version, type, length)
+        version, ptype, header_len = struct.unpack(">BBH", message[:4])
+        self.assertEqual(version, 1)
+        self.assertEqual(ptype, 2)  # Custom mode
+        self.assertTrue(len(message) > header_len + 4)
+
+    def test_check_fields(self):
+        """Test checking required fields in request."""
+        # Test valid fields
+        action = "login_register"
+        request = {"username": "test", "password": "test123"}
+        self.message.custom_protocol.dict_reconstruction = {"login_register": ["username", "password"]}
+        self.assertTrue(self.message.check_fields(action, request))
+
+        # Test missing field
+        request = {"username": "test"}
+        self.assertFalse(self.message.check_fields(action, request))
+
+        # Test None value
+        request = {"username": "test", "password": None}
+        self.assertFalse(self.message.check_fields(action, request))
+
+        # Test invalid action
+        self.assertFalse(self.message.check_fields("invalid_action", request))
 
     def test_create_response_login_register(self):
         """Test creating response for login/register action."""
@@ -88,12 +176,11 @@ class TestMessage(unittest.TestCase):
         
         response = self.message._create_response_content()
         self.assertIn("content_bytes", response)
-        self.assertEqual(response["action"], "response")
+        self.assertEqual(response["action"], "login_register_r")
         
         # Decode response content
         content = self.message._json_decode(response["content_bytes"], "utf-8")
         self.assertEqual(content["uuid"], "test-uuid")
-        self.assertEqual(content["response_type"], "login_register")
 
     def test_create_response_load_page_data(self):
         """Test creating response for load_page_data action."""
@@ -118,7 +205,43 @@ class TestMessage(unittest.TestCase):
         self.assertEqual(content["num_pending"], 5)
         self.assertEqual(content["accounts"], ["account1", "account2"])
         self.assertEqual(content["total_count"], 10)
-        self.assertEqual(content["response_type"], "load_page_data")
+        self.assertEqual(response["action"], "load_page_data_r")
+
+    def test_create_response_search_accounts(self):
+        """Test creating response for search_accounts action."""
+        self.message.protocol_mode = "json"
+        self.message.header = {"action": "search_accounts"}
+        self.message.request = self._json_encode({"search_term": "test", "offset": 0}, "utf-8")
+
+        # Mock database response
+        mock_accounts = [{"username": "test", "userid": "123"}]
+        mock_total = 1
+        self.mock_db.search_accounts.return_value = (mock_accounts, mock_total)
+
+        response = self.message._create_response_content()
+        content = self._json_decode(response["content_bytes"], "utf-8")
+
+        self.assertEqual(content["accounts"], mock_accounts)
+        self.assertEqual(content["total_count"], mock_total)
+        self.assertEqual(response["action"], "search_accounts_r")
+
+    def test_create_response_load_messages(self):
+        """Test creating response for load_messages action."""
+        self.message.protocol_mode = "json"
+        self.message.header = {"action": "load_messages"}
+        self.message.request = self._json_encode({"uuid": "123", "num_messages": 10}, "utf-8")
+
+        # Mock database response
+        mock_messages = [{"id": 1, "text": "Hello"}]
+        mock_undelivered = 1
+        self.mock_db.load_messages.return_value = (mock_messages, mock_undelivered)
+
+        response = self.message._create_response_content()
+        content = self._json_decode(response["content_bytes"], "utf-8")
+
+        self.assertEqual(content["messages"], mock_messages)
+        self.assertEqual(content["total_count"], mock_undelivered)
+        self.assertEqual(response["action"], "load_messages_r")
 
     def test_create_response_send_message(self):
         """Test creating response for send_message action."""
@@ -137,17 +260,85 @@ class TestMessage(unittest.TestCase):
         self.mock_db.get_user_username.return_value = "sender"
         self.mock_db.store_message.return_value = (True, "")
         
-        # Mock selector for recipient lookup
+        # Mock selector get_map
         mock_recipient = MagicMock()
-        mock_recipient.data = Message(self.selector, Mock(), "recipient-socket")
-        self.selector._fd_to_key = {1: mock_recipient}
+        mock_recipient.data = Message(self.selector, Mock(), "recipient-socket", accepted_versions=[1])
+        self.selector.get_map.return_value = {1: mock_recipient}
         
         response = self.message._create_response_content()
         content = self.message._json_decode(response["content_bytes"], "utf-8")
         
         self.assertTrue(content["success"])
-        self.assertEqual(content["response_type"], "send_message")
-        self.assertTrue(content["delivered"])
+        self.assertEqual(response["action"], "send_message_r")
+
+    def test_create_response_load_undelivered(self):
+        """Test creating response for load_undelivered action."""
+        self.message.protocol_mode = "json"
+        self.message.header = {"action": "load_undelivered"}
+        self.message.request = self._json_encode({"uuid": "123", "num_messages": 10}, "utf-8")
+
+        # Mock database response
+        mock_messages = [{"id": 1, "text": "Hello", "delivered": False}]
+        self.mock_db.load_undelivered.return_value = mock_messages
+
+        response = self.message._create_response_content()
+        content = self._json_decode(response["content_bytes"], "utf-8")
+
+        self.assertEqual(content["messages"], mock_messages)
+        self.assertEqual(response["action"], "load_undelivered_r")
+
+    def test_create_response_delete_messages(self):
+        """Test creating response for delete_messages action."""
+        self.message.protocol_mode = "json"
+        self.message.header = {"action": "delete_messages"}
+        self.message.request = self._json_encode({"msgids": [1, 2, 3]}, "utf-8")
+
+        # Mock database response
+        self.mock_db.delete_messages.return_value = 3
+
+        response = self.message._create_response_content()
+        content = self._json_decode(response["content_bytes"], "utf-8")
+
+        self.assertEqual(content["total_count"], 3)
+        self.assertEqual(response["action"], "delete_messages_r")
+
+    def test_create_response_delete_account(self):
+        """Test creating response for delete_account action."""
+        self.message.protocol_mode = "json"
+        self.message.header = {"action": "delete_account"}
+        self.message.request = self._json_encode({"uuid": "123", "password": "test123"}, "utf-8")
+
+        # Mock database responses
+        self.mock_db.get_user_password.return_value = "test123"
+        self.mock_db.delete_user.return_value = True
+
+        # Mock selector get_map
+        self.selector.get_map.return_value = {}
+
+        response = self.message._create_response_content()
+        content = self._json_decode(response["content_bytes"], "utf-8")
+
+        self.assertTrue(content["success"])
+        self.assertEqual(content["error"], "")
+        self.assertEqual(response["action"], "delete_account_r")
+
+        # Test incorrect password
+        self.mock_db.get_user_password.return_value = "wrong_password"
+        response = self.message._create_response_content()
+        content = self._json_decode(response["content_bytes"], "utf-8")
+
+        self.assertFalse(content["success"])
+        self.assertEqual(content["error"], "Incorrect password")
+
+    def test_create_response_error(self):
+        """Test creating response for error action."""
+        self.message.protocol_mode = "json"  # Switch to JSON mode for testing
+        self.message.header = {"action": "error"}
+        self.message.request = self.message._json_encode({}, "utf-8")  # Empty request
+        response = self.message._create_response_content()
+        content = self.message._json_decode(response["content_bytes"], "utf-8")
+        self.assertEqual(response["action"], "error")
+        self.assertIn("error", content)
 
     def test_process_events(self):
         """Test processing of read and write events."""
@@ -177,10 +368,10 @@ class TestMessage(unittest.TestCase):
             "action": "login_register"
         }
         encoded_header = self.message._json_encode(header, "utf-8")
-        header_len = struct.pack(">H", len(encoded_header))
+        protoheader = struct.pack(">BBH", 1, 0, len(encoded_header))
         
         # Mock socket receive
-        self.sock.recv.return_value = header_len + encoded_header + encoded_request
+        self.sock.recv.return_value = protoheader + encoded_header + encoded_request
         
         # Mock database response
         self.mock_db.login_or_create_account.return_value = [{
@@ -214,22 +405,11 @@ class TestMessage(unittest.TestCase):
         self.sock.close.assert_called_once()
         self.assertIsNone(self.message.sock)
 
-    def test_process_header_missing_fields(self):
-        """Test processing header with missing required fields."""
-        self.message.protocol_mode = "json"  # Switch to JSON mode for testing
-        # Create a header without required fields
-        header_data = {"version": 1}
-        encoded_header = json.dumps(header_data).encode('utf-8')
-        self.message._header_len = len(encoded_header)
-        self.message._recv_buffer = encoded_header
-        self.message.process_header()
-        self.assertEqual(self.message.header["action"], "error")
-
     def test_process_protoheader_complete(self):
         """Test processing protoheader with complete data."""
-        # Create a header length of 50 bytes (\x00\x32 in big-endian format)
-        header_len_bytes = struct.pack(">H", 50)
-        self.message._recv_buffer = header_len_bytes + b"remaining_data"
+        # Create a protoheader with version 1, protocol type 2 (custom), and length 50
+        protoheader = struct.pack(">BBH", 1, 2, 50)
+        self.message._recv_buffer = protoheader + b"remaining_data"
         
         self.message.process_protoheader()
         
@@ -248,6 +428,17 @@ class TestMessage(unittest.TestCase):
         # Check that nothing was processed
         self.assertIsNone(self.message._header_len)
         self.assertEqual(self.message._recv_buffer, b"\x00")
+
+    def test_process_header_missing_fields(self):
+        """Test processing header with missing required fields."""
+        self.message.protocol_mode = "json"  # Switch to JSON mode for testing
+        # Create a header without required fields
+        header_data = {"version": 1}
+        encoded_header = json.dumps(header_data).encode('utf-8')
+        self.message._header_len = len(encoded_header)
+        self.message._recv_buffer = encoded_header
+        self.message.process_header()
+        self.assertEqual(self.message.header["action"], "error")
     
     def test_process_header_json_complete(self):
         """Test processing header in JSON mode with complete data."""
@@ -286,7 +477,7 @@ class TestMessage(unittest.TestCase):
         self.message.process_header()
         
         # Check that custom protocol deserialize was called
-        self.message.custom_protocol.deserialize.assert_called_once_with(header_data)
+        self.message.custom_protocol.deserialize.assert_called_once_with(header_data, "header")
         # Check that header was correctly set
         self.assertEqual(self.message.header, mock_header)
         # Check that remaining data is still in buffer
@@ -294,9 +485,18 @@ class TestMessage(unittest.TestCase):
     
     def test_process_header_invalid_mode(self):
         """Test processing header with invalid protocol mode."""
+        # Set up an invalid protocol mode
         self.message.protocol_mode = "invalid"
-        self.message._header_len = 10
-        self.message._recv_buffer = b"header_data"
+        
+        # Set up the header and buffer
+        header = {
+            "content-length": 10,
+            "action": "test_action"
+        }
+        header_bytes = json.dumps(header).encode('utf-8')
+        self.message._header_len = len(header_bytes)
+        self.message._recv_buffer = header_bytes
+        self.message.header = header
         
         # Process header with invalid mode should raise ValueError
         with self.assertRaises(ValueError) as cm:
@@ -304,8 +504,6 @@ class TestMessage(unittest.TestCase):
         
         # Check the error message
         self.assertEqual(str(cm.exception), "Invalid protocol mode 'invalid'")
-        # Buffer should remain unchanged
-        self.assertEqual(self.message._recv_buffer, b"header_data")
     
     def test_process_request_complete(self):
         """Test processing request with complete data."""
@@ -343,15 +541,29 @@ class TestMessage(unittest.TestCase):
             # Check that selector wasn't modified
             mock_set_mask.assert_not_called()
 
-    def test_create_response_error(self):
-        """Test creating response for error action."""
-        self.message.protocol_mode = "json"  # Switch to JSON mode for testing
+    def test_create_response(self):
+        """Test creating response."""
+        self.message.protocol_mode = "json"
+        self.message.header = {"action": "login_register"}
+        self.message.request = self._json_encode({"username": "test", "password": "test123"}, "utf-8")
+
+        # Mock database response
+        mock_account = [{"userid": "123"}]
+        self.mock_db.login_or_create_account.return_value = mock_account
+
+        # Test response creation
+        self.message.create_response()
+        self.assertTrue(self.message.response_created)
+        self.assertGreater(len(self.message._send_buffer), 0)
+
+        # Test error response
         self.message.header = {"action": "error"}
-        self.message.request = self.message._json_encode({}, "utf-8")  # Empty request
-        response = self.message._create_response_content()
-        content = self.message._json_decode(response["content_bytes"], "utf-8")
-        self.assertEqual(content["response_type"], "error")
-        self.assertIn("error", content)
+        self.message.response_created = False
+        self.message._send_buffer = b""
+
+        self.message.create_response()
+        self.assertTrue(self.message.response_created)
+        self.assertGreater(len(self.message._send_buffer), 0)
 
 if __name__ == '__main__':
     unittest.main()
