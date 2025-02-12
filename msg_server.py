@@ -124,6 +124,23 @@ class Message:
                 return False
         return True
 
+    def _broadcast_message(self, message):
+        """Broadcast a message to all connected clients except self.
+        
+        Args:
+            message: The message to broadcast (should be already encoded)
+        """
+        # Collect sockets to notify first
+        sockets_to_notify = []
+        for _, data in self.selector.get_map().items():
+            if data.data and isinstance(data.data, Message) and data.data.sock != self.sock:
+                sockets_to_notify.append(data.data)
+        
+        # Then notify each socket
+        for socket_data in sockets_to_notify:
+            socket_data._send_buffer += message
+            socket_data._set_selector_events_mask("w")
+
     def _create_response_content(self):
         """Create response content based on the request"""
         # First decode the request content
@@ -198,17 +215,8 @@ class Message:
                     content_length=len(refresh_content_bytes)
                 )
                 
-                # Collect sockets to notify first
-                sockets_to_notify = []
-                for _, data in self.selector.get_map().items():
-                    if data.data and isinstance(data.data, Message) and data.data.sock != self.sock:
-                        sockets_to_notify.append(data.data)
-                
-                # Then notify each socket
-                for socket_data in sockets_to_notify:
-                    socket_data._send_buffer += refresh_message
-                    socket_data._set_selector_events_mask("w")
-                
+                # Broadcast refresh message to all other clients
+                self._broadcast_message(refresh_message)
 
                 response_content = {
                     "uuid": uuid,
@@ -368,16 +376,8 @@ class Message:
                         content_length=len(response_content_bytes)
                     )
                     
-                    # Collect sockets to notify first
-                    sockets_to_notify = []
-                    for key, data in self.selector.get_map().items():
-                        if data.data and isinstance(data.data, Message) and data.data.sock != self.sock:
-                            sockets_to_notify.append(data.data)
-                    
-                    # Then notify each socket
-                    for socket_data in sockets_to_notify:
-                        socket_data._send_buffer += refresh_message
-                        socket_data._set_selector_events_mask("w")
+                    # Broadcast refresh message to all other clients
+                    self._broadcast_message(refresh_message)
                 else:
                     error_message = "Failed to delete account"
             else:
