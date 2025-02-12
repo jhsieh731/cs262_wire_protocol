@@ -46,6 +46,7 @@ class CustomProtocol:
             "delete_messages_r": ["total_count"],
             "delete_account_r": ["error", "success"],
             "error": ["error"],
+            "refresh_accounts_r": ["message"],
         }
 
 

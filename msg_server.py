@@ -157,6 +157,33 @@ class Message:
                     "uuid": accounts[0]["userid"],
                 }
                 action = "login_register_r"
+                # If this was a new account creation (accounts[0] has a new userid)
+                if accounts[0].get("new_account", False):
+                    # Notify all other clients to refresh their account lists
+                    refresh_content = {
+                        "message": "Account created"
+                    }
+                    if self.protocol_mode == "json":
+                        refresh_content_bytes = self._json_encode(refresh_content, "utf-8")
+                    else:
+                        refresh_content_bytes = self.custom_protocol.serialize(refresh_content)
+                    
+                    refresh_message = self._create_message(
+                        content_bytes=refresh_content_bytes,
+                        action="refresh_accounts_r",
+                        content_length=len(refresh_content_bytes)
+                    )
+                    
+                    # Collect sockets to notify first
+                    sockets_to_notify = []
+                    for key, data in self.selector.get_map().items():
+                        if data.data and isinstance(data.data, Message) and data.data.sock != self.sock:
+                            sockets_to_notify.append(data.data)
+                    
+                    # Then notify each socket
+                    for socket_data in sockets_to_notify:
+                        socket_data._send_buffer += refresh_message
+                        socket_data._set_selector_events_mask("w")
         elif self.header["action"] == "load_page_data":
             user_uuid = request_content.get("uuid")
 
@@ -297,6 +324,29 @@ class Message:
                 # Password matches, delete the account
                 if db.delete_user(user_uuid):
                     success = True
+                    # Notify all other clients to refresh their account lists
+                    response_content = {}
+                    if self.protocol_mode == "json":
+                        response_content_bytes = self._json_encode(response_content, "utf-8")
+                    else:
+                        response_content_bytes = self.custom_protocol.serialize(response_content)
+                    
+                    refresh_message = self._create_message(
+                        content_bytes=response_content_bytes,
+                        action="refresh_accounts_r",
+                        content_length=len(response_content_bytes)
+                    )
+                    
+                    # Collect sockets to notify first
+                    sockets_to_notify = []
+                    for key, data in self.selector.get_map().items():
+                        if data.data and isinstance(data.data, Message) and data.data.sock != self.sock:
+                            sockets_to_notify.append(data.data)
+                    
+                    # Then notify each socket
+                    for socket_data in sockets_to_notify:
+                        socket_data._send_buffer += refresh_message
+                        socket_data._set_selector_events_mask("w")
                 else:
                     error_message = "Failed to delete account"
             else:

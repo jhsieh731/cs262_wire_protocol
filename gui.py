@@ -395,6 +395,10 @@ class ClientGUI:
             self.update_accounts_list(accounts)
             self.update_messages_list(messages, total_undelivered)
 
+        elif response_type == "refresh_accounts_r":
+            # Server notified us to refresh the accounts list
+            self.search_accounts()
+
         elif response_type == "search_accounts_r":
             accounts = response.get("accounts", [])
             total_count = response.get("total_count", 0)

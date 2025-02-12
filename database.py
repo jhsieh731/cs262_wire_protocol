@@ -117,7 +117,9 @@ class MessageDatabase:
                 new_user = cursor.fetchone()
                 logger.info(f"new_user: {new_user}")
                 if new_user:
-                    return [dict(new_user)]
+                    user_dict = dict(new_user)
+                    user_dict['new_account'] = True  # Flag to indicate this is a new account
+                    return [user_dict]
             return []
         except sqlite3.Error as e:
             logger.error(f"Error in login_or_create_account: {e}")
