@@ -53,7 +53,7 @@ def run_server(accepted_versions):
                     try:
                         message.process_events(mask)
                     except Exception as e:
-                        logger.info(f"Error processing events for {message.addr}: {e}")
+                        logger.error(f"Error processing events for {message.addr}: {e}")
                         message.close()
     except KeyboardInterrupt:
         logger.info("\nCaught keyboard interrupt, shutting down...")
