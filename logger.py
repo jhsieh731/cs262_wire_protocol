@@ -4,11 +4,11 @@ def set_logger(name, log_file):
     """Set up the logger with the given name and log file."""
     # Set up logging
     logger = logging.getLogger(name)
-    logger.setLevel(logging.INFO)
+    logger.setLevel(logging.DEBUG)  # Capture all levels
 
     # Create file handler
     fh = logging.FileHandler(log_file)
-    fh.setLevel(logging.INFO)
+    fh.setLevel(logging.DEBUG)  # Capture all levels
 
     # clear file
     open(log_file, 'w').close()
