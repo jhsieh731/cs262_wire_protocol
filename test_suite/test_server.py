@@ -47,8 +47,8 @@ class TestServer(unittest.TestCase):
     
     def test_server_initialization(self):
         """Test server socket initialization and setup."""
-        # Initialize server with default parameters
-        lsock = server.initialize_server()
+        # Initialize server with specific host and port
+        lsock = server.initialize_server('localhost', 65432)
         
         # Check socket setup
         self.mock_socket.bind.assert_called_once_with(('localhost', 65432))
@@ -72,8 +72,8 @@ class TestServer(unittest.TestCase):
         mock_addr = ('127.0.0.1', 12345)
         self.mock_socket.accept.return_value = (mock_client_socket, mock_addr)
         
-        # Call accept_wrapper
-        server.accept_wrapper(self.mock_socket)
+        # Call accept_wrapper with accepted_versions
+        server.accept_wrapper(self.mock_socket, accepted_versions=[1])
         
         # Verify connection handling
         self.mock_socket.accept.assert_called_once()
@@ -85,119 +85,67 @@ class TestServer(unittest.TestCase):
         self.assertEqual(register_call[0][1], selectors.EVENT_READ)
         self.assertIsInstance(register_call[1]['data'], Message)
     
-    def test_event_processing_new_connection(self):
-        """Test event processing for new connections."""
-        # Mock selector event for new connection
+    def test_run_server_new_connection(self):
+        """Test run_server handling of new connections"""
+        # Mock a new connection event
         mock_key = Mock()
         mock_key.data = None
         mock_key.fileobj = self.mock_socket
         self.mock_selector.select.return_value = [(mock_key, selectors.EVENT_READ)]
         
-        # Mock accept_wrapper
-        with patch('server.accept_wrapper') as mock_accept:
-            # Run one iteration of the event loop
-            try:
-                # Import server code without running the infinite loop
-                code = compile(
-                    'events = sel.select(timeout=None)\n'
-                    'for key, mask in events:\n'
-                    '    if key.data is None:\n'
-                    '        accept_wrapper(key.fileobj)\n',
-                    '<string>',
-                    'exec'
-                )
-                exec(code, {'sel': self.mock_selector, 'accept_wrapper': server.accept_wrapper})
-            except Exception:
-                pass
-            
-            # Verify accept_wrapper was called
-            mock_accept.assert_called_once_with(self.mock_socket)
+        # Run server until KeyboardInterrupt
+        self.mock_selector.select.side_effect = [[(mock_key, selectors.EVENT_READ)], KeyboardInterrupt()]
+        
+        # Run the server
+        server.run_server(accepted_versions=[1])
+        
+        # Verify cleanup was performed
+        self.mock_selector.close.assert_called_once()
     
-    def test_event_processing_existing_connection(self):
-        """Test event processing for existing connections."""
-        # Mock message and selector event
+    def test_run_server_existing_connection(self):
+        """Test run_server handling of existing connections"""
+        # Mock an existing connection
         mock_message = Mock(spec=Message)
+        mock_message.addr = ('127.0.0.1', 12345)
         mock_key = Mock()
         mock_key.data = mock_message
-        self.mock_selector.select.return_value = [(mock_key, selectors.EVENT_READ)]
+        mock_key.fileobj = self.mock_socket
         
-        # Run one iteration of the event loop
-        try:
-            # Import server code without running the infinite loop
-            code = compile(
-                'events = sel.select(timeout=None)\n'
-                'for key, mask in events:\n'
-                '    if key.data is not None:\n'
-                '        message = key.data\n'
-                '        message.process_events(mask)\n',
-                '<string>',
-                'exec'
-            )
-            exec(code, {'sel': self.mock_selector})
-        except Exception:
-            pass
+        # Set up selector to return the connection event then raise KeyboardInterrupt
+        self.mock_selector.select.side_effect = [[(mock_key, selectors.EVENT_READ)], KeyboardInterrupt()]
         
-        # Verify message processing
+        # Mock get_map for cleanup
+        self.mock_selector.get_map.return_value = {1: mock_key}
+        
+        # Run the server
+        server.run_server(accepted_versions=[1])
+        
+        # Verify message was processed and cleanup was performed
         mock_message.process_events.assert_called_once_with(selectors.EVENT_READ)
+        self.mock_selector.close.assert_called_once()
     
-    def test_event_processing_error_handling(self):
-        """Test error handling during event processing."""
-        # Mock message that raises an exception
+    def test_run_server_error_handling(self):
+        """Test run_server error handling"""
+        # Mock a message that raises an exception
         mock_message = Mock(spec=Message)
         mock_message.process_events.side_effect = Exception("Test error")
         mock_message.addr = ('127.0.0.1', 12345)
-        
         mock_key = Mock()
         mock_key.data = mock_message
-        self.mock_selector.select.return_value = [(mock_key, selectors.EVENT_READ)]
+        mock_key.fileobj = self.mock_socket
         
-        # Run one iteration of the event loop
-        try:
-            # Import server code without running the infinite loop
-            code = compile(
-                'events = sel.select(timeout=None)\n'
-                'for key, mask in events:\n'
-                '    if key.data is not None:\n'
-                '        message = key.data\n'
-                '        try:\n'
-                '            message.process_events(mask)\n'
-                '        except Exception:\n'
-                '            print(f"Main: Error: Exception for {message.addr}:\\n")\n'
-                '            message.close()\n',
-                '<string>',
-                'exec'
-            )
-            exec(code, {'sel': self.mock_selector})
-        except Exception:
-            pass
+        # Set up selector to return the error event then raise KeyboardInterrupt
+        self.mock_selector.select.side_effect = [[(mock_key, selectors.EVENT_READ)], KeyboardInterrupt()]
         
-        # Verify error handling
+        # Mock get_map for cleanup
+        self.mock_selector.get_map.return_value = {1: mock_key}
+        
+        # Run the server
+        server.run_server(accepted_versions=[1])
+        
+        # Verify error handling and cleanup
         mock_message.process_events.assert_called_once_with(selectors.EVENT_READ)
         mock_message.close.assert_called_once()
-    
-    def test_cleanup_on_keyboard_interrupt(self):
-        """Test cleanup when server is interrupted."""
-        # Mock KeyboardInterrupt during select
-        self.mock_selector.select.side_effect = KeyboardInterrupt()
-        
-        # Run the server code that handles interruption
-        try:
-            # Import server code without running the infinite loop
-            code = compile(
-                'try:\n'
-                '    events = sel.select(timeout=None)\n'
-                'except KeyboardInterrupt:\n'
-                '    print("Caught keyboard interrupt, exiting")\n'
-                'finally:\n'
-                '    sel.close()\n',
-                '<string>',
-                'exec'
-            )
-            exec(code, {'sel': self.mock_selector})
-        except Exception:
-            pass
-        
-        # Verify cleanup
         self.mock_selector.close.assert_called_once()
 
 if __name__ == '__main__':

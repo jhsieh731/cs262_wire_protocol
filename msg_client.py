@@ -116,10 +116,16 @@ class Message:
         """Process selector events (step 1 of processing)"""
         if mask & selectors.EVENT_READ:
             logger.debug("Read event received")
-            self.read()
+            try:
+                self.read()
+            except Exception as e:
+                logger.error(f"Error during read: {e}")
         if mask & selectors.EVENT_WRITE:
             logger.debug("Write event received")
-            self.write()
+            try:
+                self.write()
+            except Exception as e:
+                logger.error(f"Error during write: {e}")
 
     def read(self):
         """Read response pipeline"""
@@ -235,6 +241,8 @@ class Message:
                 self.header = self.custom_protocol.deserialize(
                     self._recv_buffer[:hdrlen], "header"
                 )
+            else:
+                raise ValueError(f"Invalid protocol mode {self.protocol_mode!r}")
             
             # verify header
             logger.info(f"JSON header: {self.header!r}")
@@ -244,7 +252,7 @@ class Message:
                 "action",
             ):
                 if reqhdr not in self.header:
-                    self.header["action"] = "error"
+                    raise ValueError(f"Missing required header field {reqhdr}")
 
     def reset_state(self):
         """Reset the message state to handle new requests/responses"""

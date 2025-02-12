@@ -463,6 +463,10 @@ class Message:
         hdrlen = self._header_len
 
         if len(self._recv_buffer) >= hdrlen:
+            # Validate protocol mode
+            if self.protocol_mode not in ["json", "custom"]:
+                raise ValueError(f"Invalid protocol mode {self.protocol_mode!r}")
+
             # Decode the header based on the protocol mode
             if self.protocol_mode == "json":
                 self.header = self._json_decode(
