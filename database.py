@@ -67,11 +67,49 @@ class MessageDatabase:
             if conn:
                 conn.close()
 
-    def login_or_create_account(self, username: str, password: str, socket:str):
+    def check_username(self, username: str):
+        """Check if a username already exists in the database."""
+        try:
+            conn = self.connect()
+            if conn is None or username is None:
+                return None, False
+
+            cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(*) FROM users WHERE username = ?", (username,))
+            return cursor.fetchone()[0] > 0, True
+            
+        except sqlite3.Error as e:
+            logger.error(f"Error checking username: {e}")
+            return None, False
+        finally:
+            if conn:
+                conn.close()
+
+    def register(self, username: str, password: str, socket: str):
+        """Register a new user."""
+        try:
+            conn = self.connect()
+            if conn is None or not all([username, password, socket]):
+                return None, "Database connection failed"
+
+            # add user to database
+            cursor = conn.cursor()
+            cursor.execute("INSERT INTO users (username, hashed_password, associated_socket) VALUES (?, ?, ?);", (username, password, socket))
+            conn.commit()
+            uuid = self.get_user_uuid(username)[2]
+            return uuid, ""
+            
+        except sqlite3.Error as e:
+            logger.error(f"Error registering user: {e}")
+            return None, str(e)
+
+        finally:
+            if conn:
+                conn.close()
+
+    def login(self, username: str, password: str, socket:str):
         """Login if the username and password match exactly 1 record, create an account if the username does not match any, else return an empty list."""
         login_sql = """SELECT * FROM users WHERE username = ? AND hashed_password = ?;"""
-        create_account_sql = """INSERT INTO users (username, hashed_password, associated_socket) VALUES (?, ?, ?);"""
-        check_username_sql = """SELECT * FROM users WHERE username = ?;"""
         update_socket_sql = """UPDATE users SET associated_socket = ? WHERE userid = ?;"""
 
         # Guard for empty strings; msg_server will handle this as failure
@@ -91,36 +129,20 @@ class MessageDatabase:
             # Check if the username and password match records
             cursor.execute(login_sql, (username, password))
             res = cursor.fetchall()
-            logger.info(f"res: {res}")
 
-            # Check if multiple users have the same username and password
-            if len(res) > 1:
+            # Check if multiple users (or none) have the same username and password-- >0 should not happen
+            if len(res) != 1:
                 logger.error("Error: multiple users with the same username and password")
                 return []
-            user = res[0] if len(res) == 1 else None
-
-            # login
-            if user:
-                # update socket
-                logger.info(f"logging in, socket: {socket}, length: {len(socket)}")
-                cursor.execute(update_socket_sql, (socket, user["userid"]))
-                conn.commit()
-                return [dict(user)]
             
-            # Register; Check if the username is unique
-            cursor.execute(check_username_sql, (username,))
-            if cursor.fetchone() is None:
-                # Create a new account
-                cursor.execute(create_account_sql, (username, password, socket))
-                conn.commit()
-                cursor.execute(login_sql, (username, password))
-                new_user = cursor.fetchone()
-                logger.info(f"new_user: {new_user}")
-                if new_user:
-                    user_dict = dict(new_user)
-                    user_dict['new_account'] = True  # Flag to indicate this is a new account
-                    return [user_dict]
-            return []
+            user = res[0]
+
+            # update socket
+            logger.info(f"logging in, socket: {socket}, length: {len(socket)}")
+            cursor.execute(update_socket_sql, (socket, user["userid"]))
+            conn.commit()
+            return [dict(user)]
+
         except sqlite3.Error as e:
             logger.error(f"Error in login_or_create_account: {e}")
             return []

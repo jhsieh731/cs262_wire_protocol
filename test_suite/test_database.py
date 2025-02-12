@@ -1,10 +1,10 @@
-
 import unittest
 import sys
 import os
 import sqlite3
 
-# to run: python3 -m unittest test_suite/test_db.py -v
+# to run: python3 -m unittest test_suite/test_database.py -v
+
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from database import MessageDatabase
@@ -35,6 +35,14 @@ class TestDatabase(unittest.TestCase):
         self.db.close()
         if os.path.exists(self.db_file):
             os.remove(self.db_file)
+
+
+    def register_user(self, username, password, socket):
+        """Helper method to register a user."""
+        is_used, _ = self.db.check_username(username)
+        if not is_used:
+            self.db.register(username, password, socket)
+
 
     def test_close(self):
         """Test database connection closing."""
@@ -105,28 +113,19 @@ class TestDatabase(unittest.TestCase):
         self.assertIn("message", column_names)
         self.assertIn("status", column_names)
         self.assertIn("timestamp", column_names)
-    def test_login_or_create_account(self):
-        # Test creating a new account
-        accounts = self.db.login_or_create_account(self.test_user1["username"], self.test_user1["password"], self.test_user1["socket"])
-        self.assertEqual(len(accounts), 1)
-        self.assertEqual(accounts[0]["username"], self.test_user1["username"])
 
-        # Test logging in with existing account
-        accounts = self.db.login_or_create_account(self.test_user1["username"], self.test_user1["password"], self.test_user1["socket"])
-        self.assertEqual(len(accounts), 1)
-        self.assertEqual(accounts[0]["username"], self.test_user1["username"])
+    def test_check_username(self):
+        # Create test user
+        self.register_user(self.test_user1["username"], self.test_user1["password"], self.test_user1["socket"])
 
-        # Test login with wrong password
-        accounts = self.db.login_or_create_account(self.test_user1["username"], "wrongpassword", self.test_user1["socket"])
-        self.assertEqual(len(accounts), 0)
-
-        # Test with empty username
-        accounts = self.db.login_or_create_account("", self.test_user1["password"], self.test_user1["socket"])
-        self.assertEqual(len(accounts), 0)
+        # Test checking existing username
+        exists, _ = self.db.check_username(self.test_user1["username"])
+        self.assertTrue(exists)
 
     def test_get_user_uuid(self):
         # Create test user first
-        self.db.login_or_create_account(self.test_user1["username"], self.test_user1["password"], self.test_user1["socket"])
+        self.register_user(self.test_user1["username"], self.test_user1["password"], self.test_user1["socket"])
+
 
         # Test getting UUID of existing user
         success, error, uuid = self.db.get_user_uuid(self.test_user1["username"])
@@ -142,8 +141,9 @@ class TestDatabase(unittest.TestCase):
 
     def test_get_associated_socket(self):
         # Create test user
-        accounts = self.db.login_or_create_account(self.test_user1["username"], self.test_user1["password"], self.test_user1["socket"])
-        uuid = accounts[0]["userid"]
+        self.register_user(self.test_user1["username"], self.test_user1["password"], self.test_user1["socket"])
+        success, error, uuid = self.db.get_user_uuid(self.test_user1["username"])
+
 
         # Test getting socket of existing user
         socket = self.db.get_associated_socket(uuid)
@@ -156,10 +156,11 @@ class TestDatabase(unittest.TestCase):
     def test_store_message(self):
         """Test message storage functionality."""
         # Create test users first
-        accounts1 = self.db.login_or_create_account(self.test_user1["username"], self.test_user1["password"], self.test_user1["socket"])
-        accounts2 = self.db.login_or_create_account(self.test_user2["username"], self.test_user2["password"], self.test_user2["socket"])
-        uuid1 = accounts1[0]["userid"]
-        uuid2 = accounts2[0]["userid"]
+        self.register_user(self.test_user1["username"], self.test_user1["password"], self.test_user1["socket"])
+        self.register_user(self.test_user2["username"], self.test_user2["password"], self.test_user2["socket"])
+        success1, error1, uuid1 = self.db.get_user_uuid(self.test_user1["username"])
+        success2, error2, uuid2 = self.db.get_user_uuid(self.test_user2["username"])
+
         
         # Test storing a valid message
         success, error = self.db.store_message(uuid1, uuid2, "Test message", True, "2025-02-10 10:00:00")
@@ -187,8 +188,8 @@ class TestDatabase(unittest.TestCase):
         
     def test_search_accounts(self):
         # Create test users first
-        self.db.login_or_create_account(self.test_user1["username"], self.test_user1["password"], self.test_user1["socket"])
-        self.db.login_or_create_account(self.test_user2["username"], self.test_user2["password"], self.test_user2["socket"])
+        self.register_user(self.test_user1["username"], self.test_user1["password"], self.test_user1["socket"])
+        self.register_user(self.test_user2["username"], self.test_user2["password"], self.test_user2["socket"])
 
         # Test searching with empty string (should return all users)
         accounts, total = self.db.search_accounts("", 0)
@@ -208,8 +209,8 @@ class TestDatabase(unittest.TestCase):
 
     def test_get_user_password(self):
         # Create test user first
-        accounts = self.db.login_or_create_account(self.test_user1["username"], self.test_user1["password"], self.test_user1["socket"])
-        uuid = accounts[0]["userid"]
+        self.register_user(self.test_user1["username"], self.test_user1["password"], self.test_user1["socket"])
+        success, error, uuid = self.db.get_user_uuid(self.test_user1["username"])
 
         # Test getting password of existing user
         password = self.db.get_user_password(uuid)
@@ -221,8 +222,8 @@ class TestDatabase(unittest.TestCase):
 
     def test_delete_user(self):
         # Create test user first
-        accounts = self.db.login_or_create_account(self.test_user1["username"], self.test_user1["password"], self.test_user1["socket"])
-        uuid = accounts[0]["userid"]
+        self.register_user(self.test_user1["username"], self.test_user1["password"], self.test_user1["socket"])
+        success, error, uuid = self.db.get_user_uuid(self.test_user1["username"])
 
         # Test deleting existing user
         success = self.db.delete_user(uuid)
@@ -238,8 +239,8 @@ class TestDatabase(unittest.TestCase):
 
     def test_get_user_username(self):
         # Create test user
-        accounts = self.db.login_or_create_account(self.test_user1["username"], self.test_user1["password"], self.test_user1["socket"])
-        uuid = accounts[0]["userid"]
+        self.register_user(self.test_user1["username"], self.test_user1["password"], self.test_user1["socket"])
+        success, error, uuid = self.db.get_user_uuid(self.test_user1["username"])
 
         # Test getting username of existing user
         username = self.db.get_user_username(uuid)
@@ -251,10 +252,10 @@ class TestDatabase(unittest.TestCase):
 
     def test_load_messages(self):
         # Create test users
-        accounts1 = self.db.login_or_create_account(self.test_user1["username"], self.test_user1["password"], self.test_user1["socket"])
-        accounts2 = self.db.login_or_create_account(self.test_user2["username"], self.test_user2["password"], self.test_user2["socket"])
-        uuid1 = accounts1[0]["userid"]
-        uuid2 = accounts2[0]["userid"]
+        self.register_user(self.test_user1["username"], self.test_user1["password"], self.test_user1["socket"])
+        self.register_user(self.test_user2["username"], self.test_user2["password"], self.test_user2["socket"])
+        success1, error1, uuid1 = self.db.get_user_uuid(self.test_user1["username"])
+        success2, error2, uuid2 = self.db.get_user_uuid(self.test_user2["username"])
 
         # Store some test messages with different timestamps
         self.db.store_message(uuid1, uuid2, "Oldest Message", True, "2025-02-10 10:00:00")
@@ -262,30 +263,22 @@ class TestDatabase(unittest.TestCase):
         self.db.store_message(uuid1, uuid2, "Newest Message", True, "2025-02-10 10:02:00")
 
         # Test loading messages for user2
-        conn = self.db.connect()
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
-        cursor.execute("""
-            SELECT * FROM messages 
-            WHERE recipientuuid = ? 
-            ORDER BY timestamp DESC
-            LIMIT 10
-        """, (uuid2,))
-        messages = cursor.fetchall()
+
+        messages, pending = self.db.load_messages(uuid2, 10)
         self.assertEqual(len(messages), 3)  # Should see all messages
 
         # Verify messages are in correct order (newest to oldest)
-        messages_list = [msg["message"] for msg in messages]
+        messages_list = [msg[3] for msg in messages]  # message is the 4th column
         self.assertEqual(messages_list[0], "Newest Message")
         self.assertEqual(messages_list[1], "Middle Message")
         self.assertEqual(messages_list[2], "Oldest Message")
 
     def test_load_page_data(self):
         # Create test users
-        accounts1 = self.db.login_or_create_account(self.test_user1["username"], self.test_user1["password"], self.test_user1["socket"])
-        accounts2 = self.db.login_or_create_account(self.test_user2["username"], self.test_user2["password"], self.test_user2["socket"])
-        uuid1 = accounts1[0]["userid"]
-        uuid2 = accounts2[0]["userid"]
+        self.register_user(self.test_user1["username"], self.test_user1["password"], self.test_user1["socket"])
+        self.register_user(self.test_user2["username"], self.test_user2["password"], self.test_user2["socket"])
+        success1, error1, uuid1 = self.db.get_user_uuid(self.test_user1["username"])
+        success2, error2, uuid2 = self.db.get_user_uuid(self.test_user2["username"])
 
         # Store some test messages
         self.db.store_message(uuid1, uuid2, "Message 1", True, "2025-02-10 10:00:00")
@@ -304,10 +297,10 @@ class TestDatabase(unittest.TestCase):
 
     def test_delete_messages(self):
         # Create test users and messages first
-        accounts1 = self.db.login_or_create_account(self.test_user1["username"], self.test_user1["password"], self.test_user1["socket"])
-        accounts2 = self.db.login_or_create_account(self.test_user2["username"], self.test_user2["password"], self.test_user2["socket"])
-        uuid1 = accounts1[0]["userid"]
-        uuid2 = accounts2[0]["userid"]
+        self.register_user(self.test_user1["username"], self.test_user1["password"], self.test_user1["socket"])
+        self.register_user(self.test_user2["username"], self.test_user2["password"], self.test_user2["socket"])
+        success1, error1, uuid1 = self.db.get_user_uuid(self.test_user1["username"])
+        success2, error2, uuid2 = self.db.get_user_uuid(self.test_user2["username"])
 
         # Store some messages
         self.db.store_message(uuid1, uuid2, "Message 1", True, "2025-02-10 10:00:00")
@@ -332,10 +325,10 @@ class TestDatabase(unittest.TestCase):
 
     def test_load_undelivered(self):
         # Create test users first
-        accounts1 = self.db.login_or_create_account(self.test_user1["username"], self.test_user1["password"], self.test_user1["socket"])
-        accounts2 = self.db.login_or_create_account(self.test_user2["username"], self.test_user2["password"], self.test_user2["socket"])
-        uuid1 = accounts1[0]["userid"]
-        uuid2 = accounts2[0]["userid"]
+        self.register_user(self.test_user1["username"], self.test_user1["password"], self.test_user1["socket"])
+        self.register_user(self.test_user2["username"], self.test_user2["password"], self.test_user2["socket"])
+        success1, error1, uuid1 = self.db.get_user_uuid(self.test_user1["username"])
+        success2, error2, uuid2 = self.db.get_user_uuid(self.test_user2["username"])
 
         # Store messages with different statuses
         self.db.store_message(uuid1, uuid2, "Pending message", False, "2025-02-10 10:00:00")

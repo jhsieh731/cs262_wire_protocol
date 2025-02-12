@@ -13,7 +13,7 @@ logger = set_logger("msg_server", "msg_server.log")
 db = MessageDatabase()
 
 class Message:
-    def __init__(self, selector, sock, addr, accepted_versions):
+    def __init__(self, selector, sock, addr, accepted_versions, protocol):
         self.selector = selector
         self.sock = sock
         self.addr = addr
@@ -23,7 +23,7 @@ class Message:
         self.header = None
         self.request = None
         self.response_created = False
-        self.protocol_mode = "custom" # "json" or "custom", must be set before use
+        self.protocol_mode = protocol
         self.custom_protocol = CustomProtocol()
         self.accepted_versions = accepted_versions
 
@@ -143,9 +143,9 @@ class Message:
         action = "error"
         logger.info(f"action: {self.header['action']}")
         # Create response content and encode it
-        if self.header["action"] == "login_register":
+        if self.header["action"] == "login":
             # try to login
-            accounts = db.login_or_create_account(request_content.get("username"), request_content.get("password"), str(self.addr))
+            accounts = db.login(request_content.get("username"), request_content.get("password"), str(self.addr))
             logger.info(f"Account lookup result: {accounts}")
             if (len(accounts) != 1):
                 response_content = {
@@ -156,34 +156,59 @@ class Message:
                 response_content = {
                     "uuid": accounts[0]["userid"],
                 }
-                action = "login_register_r"
-                # If this was a new account creation (accounts[0] has a new userid)
-                if accounts[0].get("new_account", False):
-                    # Notify all other clients to refresh their account lists
-                    refresh_content = {
-                        "message": "Account created"
-                    }
-                    if self.protocol_mode == "json":
-                        refresh_content_bytes = self._json_encode(refresh_content, "utf-8")
-                    else:
-                        refresh_content_bytes = self.custom_protocol.serialize(refresh_content)
-                    
-                    refresh_message = self._create_message(
-                        content_bytes=refresh_content_bytes,
-                        action="refresh_accounts_r",
-                        content_length=len(refresh_content_bytes)
-                    )
-                    
-                    # Collect sockets to notify first
-                    sockets_to_notify = []
-                    for key, data in self.selector.get_map().items():
-                        if data.data and isinstance(data.data, Message) and data.data.sock != self.sock:
-                            sockets_to_notify.append(data.data)
-                    
-                    # Then notify each socket
-                    for socket_data in sockets_to_notify:
-                        socket_data._send_buffer += refresh_message
-                        socket_data._set_selector_events_mask("w")
+                action = "login_r"
+
+        elif self.header["action"] == "check_username":
+            username = request_content.get("username")
+            is_in_use, success_status = db.check_username(username)
+            if not success_status:
+                response_content = {
+                    "message": "An error occurred. Please try again."
+                }
+                action = "login_error"
+            else:
+                response_content = {
+                    "message": is_in_use,
+                }
+                action = "check_username_r"
+        
+        elif self.header["action"] == "register":
+            username = request_content.get("username")
+            password = request_content.get("password")
+            uuid, error_msg = db.register(username, password, str(self.addr))
+            if error_msg:
+                response_content = {
+                    "error": error_msg,
+                }
+                action = "error"
+            else:
+
+                # Notify all other clients to refresh their account lists
+                refresh_content = {
+                    "message": "Account created"
+                }
+                if self.protocol_mode == "json":
+                    refresh_content_bytes = self._json_encode(refresh_content, "utf-8")
+                else:
+                    refresh_content_bytes = self.custom_protocol.serialize(refresh_content)
+                
+                refresh_message = self._create_message(
+                    content_bytes=refresh_content_bytes,
+                    action="refresh_accounts_r",
+                    content_length=len(refresh_content_bytes)
+                )
+                
+                for _, data in self.selector.get_map().items():
+                    if data.data and isinstance(data.data, Message) and data.data.sock != self.sock:
+                        data.data._send_buffer += refresh_message
+                        data.data._set_selector_events_mask("w")
+                
+
+                response_content = {
+                    "uuid": uuid,
+                }
+                action = "register_r"
+
         elif self.header["action"] == "load_page_data":
             user_uuid = request_content.get("uuid")
 

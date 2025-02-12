@@ -9,9 +9,8 @@ from logger import set_logger
 logger = set_logger('msg_client', 'msg_client.log')
 
 
-# TODO: link this with client/server...
 class Message:
-    def __init__(self, selector, sock, addr, gui, request):
+    def __init__(self, selector, sock, addr, gui, request, protocol):
         self.selector = selector
         self.sock = sock
         self.addr = addr
@@ -23,7 +22,7 @@ class Message:
         self._header_len = None
         self.header = None
         self.response = None
-        self.protocol_mode = "custom" # "json" or "custom"
+        self.protocol_mode = protocol
         self.custom_protocol = CustomProtocol()
         self.version = 1
 

@@ -33,10 +33,12 @@ class CustomProtocol:
             "load_undelivered": ["num_messages", "uuid"],
             "load_messages": ["num_messages", "uuid"],
             "send_message": ["message", "recipient_username", "timestamp", "uuid"],
-            "login_register": ["password", "username"],
+            "login": ["password", "username"],
             "delete_account": ["password", "uuid"],
+            "check_username": ["username"],
+            "register": ["password", "username"],
             "login_error": ["message"],
-            "login_register_r": ["uuid"],
+            "login_r": ["uuid"],
             "load_page_data_r": ["accounts", "messages", "num_pending", "total_count"],
             "search_accounts_r": ["accounts", "total_count"],
             "load_messages_r": ["messages", "total_count"],
@@ -47,6 +49,8 @@ class CustomProtocol:
             "delete_account_r": ["error", "success"],
             "error": ["error"],
             "refresh_accounts_r": ["message"],
+            "check_username_r": ["message"],
+            "register_r": ["uuid"],
         }
 
 

@@ -12,13 +12,13 @@ This document provides detailed information on the client-side implementation of
 
 ## Networking Setup
 
-- `initialize_client(server_host, server_port)`: Initializes the client by setting up a selector for handling network events and establishing communication parameters.
-- `start_connection(host, port, gui, request)`: Establishes a connection to the server and registers a message handler, allowing bidirectional communication between client and server.
+- `initialize_client(server_host, server_port, input_protocol)`: Initializes the client by setting up a selector for handling network events and establishing communication parameters.
+- `start_connection(gui, request)`: Establishes a connection to the server and registers a message handler, allowing bidirectional communication between client and server.
 - `network_thread(request)`: Handles incoming network events and processes messages efficiently in a dedicated thread, ensuring non-blocking performance and real-time updates.
 - `send_to_server(request)`: Queues and sends messages to the server, ensuring reliability and immediate processing of user requests, including error handling for dropped connections.
-- `initialize_server(host=HOST, port=PORT)`: Initializes the server, sets up a socket for listening, and registers it with the selector to handle incoming client connections efficiently.
-- `accept_wrapper(sock)`: Accepts a new client connection and registers it for communication, enabling seamless multiple-client interaction with proper session management.
-- `run_server()`: Runs the server event loop, processing incoming connections and messages, ensuring constant availability and proper error handling.
+- `initialize_server(host, port)`: Initializes the server, sets up a socket for listening, and registers it with the selector to handle incoming client connections efficiently.
+- `accept_wrapper(sock)` (on client) or `accept_wrapper(sock, accepted_versions, protocol)` (on server): Accepts a new client connection and registers it for communication, enabling seamless multiple-client interaction with proper session management.
+- `run_server()` (on client) or `run_server(accepted_versions, protocol)` (on server): Runs the server event loop, processing incoming connections and messages, ensuring constant availability and proper error handling.
 
 ## Message Handling
 
@@ -90,46 +90,24 @@ The application requires Python 3.6 or higher and uses the following standard li
 - `struct`: For binary data handling
 - `datetime`: For timestamp management
 
-For development and testing, additional packages are required:
-
-```bash
-pip install -r requirements.txt
-```
-
-Or install them individually:
-
-```bash
-pip install pytest      # For running tests
-pip install coverage    # For test coverage reports
-pip install black       # For code formatting
-pip install pylint      # For code analysis
-```
+For development and testing, these should all be included natively in the official Python (default Mac version is not sufficient).
 
 ## Running the Application
 
-First, ensure all dependencies are installed:
+1. Start the server:
 
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/jhsieh731/cs262_wire_protocol.git
-   cd cs262_wire_protocol
-   ```
-
-2. Install dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-3. Start the server:
    ```bash
    python server.py <host> <port>
    ```
+
    Where `<host>` is the server's address and `<port>` is the port number (≥ 1024).
 
-4. Start the client:
+2. Start the client:
+
    ```bash
-   python client.py <host> <port>
+   python client.py <host> <port> <protocol>
    ```
+
    Where `<host>` is the server's address and `<port>` is the server's port number.
 
 ## Notes
