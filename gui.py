@@ -16,7 +16,7 @@ class ClientGUI:
         self.network_thread = network_thread
 
         self.user_uuid = None
-        self.selected_accounts = None
+        self.selected_account = None
         self.username = ""
         self.current_page = 0
         self.max_accounts_page = 0
@@ -27,7 +27,6 @@ class ClientGUI:
         self.login_frame = tk.Frame(master)
         self.chat_frame = tk.Frame(master)
         self.create_account_frame = tk.Frame(master)
-        self.register_frame = tk.Frame(master)
         self.error_frame = tk.Frame(master)
         self.is_threading = False
         self.duplicated_password = False
@@ -49,7 +48,6 @@ class ClientGUI:
         self.clear_frame(self.login_frame)
         self.clear_frame(self.chat_frame)
         self.clear_frame(self.create_account_frame)
-        self.clear_frame(self.register_frame)
         self.error_frame.pack()
 
         self.error_label = tk.Label(self.error_frame, text="Error", fg="red", font=("Helvetica", 16))
@@ -65,7 +63,6 @@ class ClientGUI:
         self.clear_frame(self.chat_frame)
         self.clear_frame(self.login_frame)
         self.clear_frame(self.error_frame)
-        self.clear_frame(self.register_frame)
 
         self.create_account_frame.pack()
 
@@ -84,40 +81,10 @@ class ClientGUI:
         self.back_button = tk.Button(self.create_account_frame, text="Back", command=self.create_login_page)
         self.back_button.pack(padx=10, pady=5)
 
-    def create_register_page(self):
-        self.clear_frame(self.chat_frame)
-        self.clear_frame(self.login_frame)
-        self.clear_frame(self.error_frame)
-        self.clear_frame(self.create_account_frame)
-
-        self.register_frame.pack()
-
-        self.create_account_label = tk.Label(self.register_frame, text="Create Account", font=("Helvetica", 16))
-        self.create_account_label.pack(padx=10, pady=10)
-
-        self.register_username_label = tk.Label(self.register_frame, text="Username:")
-        self.register_username_label.pack(padx=10, pady=5)
-        self.register_username_entry = tk.Entry(self.register_frame)
-        self.register_username_entry.pack(padx=10, pady=5)
-        # self.register_username_entry.config(state=tk.DISABLED)
-
-        self.register_password_label = tk.Label(self.register_frame, text="Password:")
-        self.register_password_label.pack(padx=10, pady=5)
-        self.register_password_entry = tk.Entry(self.register_frame, show="*")
-        self.register_password_entry.pack(padx=10, pady=5)
-
-
-        self.register_button = tk.Button(self.register_frame, text="Register", command=self.register)
-        self.register_button.pack(padx=10, pady=5)
-
-        self.back_button = tk.Button(self.register_frame, text="Back", command=self.create_login_page)
-        self.back_button.pack(padx=10, pady=5)
-
     def create_login_page(self):
         self.clear_frame(self.chat_frame)
         self.clear_frame(self.error_frame)
         self.clear_frame(self.create_account_frame)
-        self.clear_frame(self.register_frame)
 
         self.login_frame.pack()
 
@@ -147,7 +114,6 @@ class ClientGUI:
         self.clear_frame(self.login_frame)
         self.clear_frame(self.error_frame)
         self.clear_frame(self.create_account_frame)
-        self.clear_frame(self.register_frame)
         self.chat_frame.pack(fill=tk.BOTH, expand=True)
 
         # First column: Accounts list with search bar and pagination
@@ -298,6 +264,8 @@ class ClientGUI:
             index = selection[0]
             self.selected_account = event.widget.get(index)
             self.update_message_input_area()
+            
+            self.show_private_chat()
     
     def load_more_messages(self):
         self.num_messages += 10
@@ -366,7 +334,7 @@ class ClientGUI:
         self.thread_send(request)
 
     def register(self):
-        username = self.register_username_entry.get()
+        username = self.username_entry.get()
         password = self.register_password_entry.get()
         if username and password:
             request = {
@@ -424,16 +392,17 @@ class ClientGUI:
     def send_message(self):
             msg = self.entry.get()
             if msg and self.selected_account:
+                timestamp = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                 logger.info(f"Selected account: {self.selected_account}, Message: {msg}")
                 self.entry.delete(0, tk.END)
                 # add message to the message display
                 self.message_display.config(state=tk.NORMAL)
-                self.message_display.insert(tk.END, f"{self.username}: {msg}\n")
+                self.message_display.insert(tk.END, f"[{timestamp}] {self.username}: {msg}\n")
                 self.message_display.config(state=tk.DISABLED)
 
                 request = {
                     "action": "send_message",
-                    "content": {"uuid": self.user_uuid, "recipient_username": self.selected_account, "message": msg, "timestamp": datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')},
+                    "content": {"uuid": self.user_uuid, "recipient_username": self.selected_account, "message": msg, "timestamp": timestamp},
                 }
                 self.thread_send(request)
 
@@ -464,6 +433,22 @@ class ClientGUI:
         }
         self.thread_send(request)
 
+    def show_private_chat(self):
+        # Request private chat messages
+        request = {
+            "action": "load_private_chat",
+            "content": {
+                "current_username": self.username,
+                "other_username": self.selected_account,
+            }
+        }
+        self.thread_send(request)
+        
+        # Clear message display while loading
+        self.message_display.config(state=tk.NORMAL)
+        self.message_display.delete(1.0, tk.END)
+        self.message_display.insert(tk.END, "Loading messages...")
+        self.message_display.config(state=tk.DISABLED)
 
     # ===================================================================
     # ===================================================================
@@ -520,16 +505,51 @@ class ClientGUI:
             # Update pagination state. Start index from 0
             self.max_accounts_page = (total_count // 10)
             
-            # Enable/disable pagination buttons
-            self.prev_button["state"] = tk.NORMAL if self.current_page > 0 else tk.DISABLED
-            self.next_button["state"] = tk.NORMAL if self.current_page < self.max_accounts_page else tk.DISABLED
+        elif response_type == "load_private_chat_r":
+            if response.get("success"):
+                messages_data = response.get("messages", [])
+                logger.info(f"messages_data: {messages_data}")
+                # Clear existing messages
+                self.message_display.config(state=tk.NORMAL)
+                self.message_display.delete(1.0, tk.END)
+                
+                # Handle both custom and JSON protocol formats
+                if messages_data and isinstance(messages_data, list):
+                    self.message_display.insert(tk.END, f"Your chat with {self.selected_account}\n")
+                    # Check if it's the custom protocol format (flat list of strings)
+                    if len(messages_data) > 0 and isinstance(messages_data[0], str):
+                        # Process messages in groups of 4
+                        for i in range(0, len(messages_data), 4):
+                            if i + 3 < len(messages_data):
+                                # Clean up the strings (remove quotes and parentheses)
+                                sender = messages_data[i].strip("('")
+                                recipient = messages_data[i+1].strip("' ")
+                                message = messages_data[i+2].strip("' ")
+                                timestamp = messages_data[i+3].strip("')")
+                                
+                                formatted_msg = f"[{timestamp}] {sender}: {message}\n"
+                                self.message_display.insert(tk.END, formatted_msg)
+                    # JSON protocol format (list of lists)
+                    elif len(messages_data) > 0 and isinstance(messages_data[0], list):
+                        for msg in messages_data:
+                            if len(msg) == 4:
+                                sender, recipient, message, timestamp = msg
+                                formatted_msg = f"[{timestamp}] {sender}: {message}\n"
+                                self.message_display.insert(tk.END, formatted_msg)
+                
+                # Scroll to bottom and disable editing
+                self.message_display.see(tk.END)
+                self.message_display.config(state=tk.DISABLED)
+            else:
+                logger.error(f"Error loading private chat: {response.get('error')}")
             
         elif response_type == "receive_message_r":            
             sender = response.get("sender_username", "Unknown")
             message = response.get("message", "")
+            timestamp = response.get("timestamp", "")
             logger.info(f"Received message from {sender}: {message}")
             self.message_display.config(state=tk.NORMAL)
-            self.message_display.insert(tk.END, f"{sender}: {message}\n")
+            self.message_display.insert(tk.END, f"[{timestamp}] {sender}: {message}\n")
             self.message_display.config(state=tk.DISABLED)
             self.num_messages += 1
 
@@ -578,22 +598,44 @@ class ClientGUI:
                 self.username_entry.insert(0, entered_username)
 
             else:
-                self.create_register_page()
-                self.register_username_entry.insert(0, entered_username)
-                # disable it
-                self.register_username_entry.config(state=tk.DISABLED)
+                self.create_account_frame.tkraise()
 
+                # disable username entry
+                self.username_entry.config(state=tk.DISABLED)
+
+                # remove Create Account button
+                self.create_button.pack_forget()
+                self.back_button.pack_forget()
+
+                # Ensure the password entry field is only created once
+                if not self.duplicated_password:
+                    # add password field
+                    self.register_password_label = tk.Label(self.create_account_frame, text="Password:")
+                    self.register_password_label.pack(padx=10, pady=5)
+                    self.register_password_entry = tk.Entry(self.create_account_frame, show="*")
+                    self.register_password_entry.pack(padx=10, pady=5)
+
+                    # add new create account button
+                    self.create_account_button = tk.Button(self.create_account_frame, text="Create Account", command=self.register)
+                    self.create_account_button.pack(padx=10, pady=5)
+
+                    # re-add back button
+                    self.back_button = tk.Button(self.create_account_frame, text="Back", command=self.create_login_page)
+                    self.back_button.pack(padx=10, pady=5)
 
         elif response_type == "register_r":
             if response.get("error", None):
                 self.create_error_page(response.get("error", "An error occurred"))
             else:
-                self.username = self.register_username_entry.get()
+                self.username = self.username_entry.get()
                 self.user_uuid = response.get("uuid", None)
                 self.create_chat_page()
+
 
         
         elif response_type == "error": # Handle error response
             logger.error(f"Error: {response.get('error', 'An error occurred')}")
             messagebox.showerror("Error", response.get("error", "An error occurred"), icon="warning")
     
+
+

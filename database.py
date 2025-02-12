@@ -199,6 +199,45 @@ class MessageDatabase:
         finally:
             if conn:
                 conn.close()
+                
+    def get_messages_between_usernames(self, current_user: str, other_user: str) -> List[Tuple[str, str, str, str]]:
+        """Get all messages between two users by their usernames, ordered by timestamp.
+        
+        Args:
+            current_user: First username
+            other_user: Second username
+            
+        Returns:
+            List of tuples containing (sender_username, recipient_username, message, timestamp)
+        """
+        try:
+            conn = self.connect()
+            if conn is None:
+                logger.error("Failed to connect to database in get_messages_between_usernames")
+                return []
+
+            cursor = conn.cursor()
+            cursor.execute(
+                """SELECT 
+                       s.username as sender_username,
+                       r.username as recipient_username,
+                       m.message,
+                       datetime(m.timestamp) as timestamp
+                   FROM messages m
+                   JOIN users s ON m.senderuuid = s.userid
+                   JOIN users r ON m.recipientuuid = r.userid
+                   WHERE (s.username=? AND r.username=?) 
+                      OR (s.username=? AND r.username=?)
+                   ORDER BY m.timestamp ASC""",
+                (current_user, other_user, other_user, current_user)
+            )
+            return cursor.fetchall()
+        except sqlite3.Error as e:
+            logger.error(f"Error getting messages between users: {e}")
+            return []
+        finally:
+            if conn:
+                conn.close()
 
     def store_message(self, sender_uuid: str, recipient_uuid: str, message_text: str, status: bool, timestamp) -> tuple[bool, str]:
         """

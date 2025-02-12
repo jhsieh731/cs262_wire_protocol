@@ -134,10 +134,12 @@ class Message:
             computed_checksum = self.custom_protocol.compute_checksum(self.request)
             if computed_checksum != self.header.get("checksum") or not request_content:
                 self.header["action"] = "error"
+                logger.error("Checksum does not match")
 
         # Check fields in request are there
         if not self.check_fields(self.header["action"], request_content):
             self.header["action"] = "error"
+            logger.error(f"Missing required fields in request. Action: {self.header['action']}")
 
         response_content = {}
         action = "error"
@@ -181,6 +183,7 @@ class Message:
                     "error": error_msg,
                 }
                 action = "error"
+                logger.error(error_msg)
             else:
 
                 # Notify all other clients to refresh their account lists
@@ -282,6 +285,7 @@ class Message:
                         "message": message_text,
                         "sender_uuid": sender_uuid,
                         "sender_username": sender_username,
+                        "timestamp": timestamp,
                     }
                     
                     # Convert content to bytes for sending
@@ -386,16 +390,38 @@ class Message:
                 "error": error_message,
             }
             action = "delete_account_r"
+        elif self.header["action"] == "load_private_chat":
+            current_username = request_content.get("current_username")
+            other_username = request_content.get("other_username")
+            
+            if current_username and other_username:
+                # Get messages between the two users
+                messages = db.get_messages_between_usernames(current_username, other_username)
+                response_content = {
+                    "messages": messages,
+                    "success": True
+                }
+                action = "load_private_chat_r"
+            else:
+                response_content = {
+                    "error": "Missing current_username or other_username",
+                    "success": False
+                }
+                action = "error"
+                logger.error("Missing current_username or other_username")
+                
         elif self.header["action"] == "error":
             response_content = {
                 "error": f"An error occurred. Please try again."
             }
             action = "error"
+            logger.error(f"Error happened somewhere deeper.")
         else:
             response_content = {
                 "error": f"Invalid action: {self.header['action']}"
             }
             action = "error"
+            logger.error(f"Invalid action: {self.header['action']}")
             
         if self.protocol_mode == "json":
             content_bytes = self._json_encode(response_content, "utf-8")
@@ -513,6 +539,7 @@ class Message:
             ):
                 if reqhdr not in self.header:
                     self.header["action"] = "error"
+                    logger.error("Missing required header field")
 
     def process_request(self):
         content_len = self.header["content-length"]

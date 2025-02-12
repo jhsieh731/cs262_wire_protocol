@@ -106,21 +106,32 @@ class TestCustomProtocol(unittest.TestCase):
 
     def test_deserialize(self):
         """Test full message deserialization."""
-        # Test login_register action
-        login_data = b'["password123","testuser"]'
+        # Test load_private_chat action
+        chat_data = b'["alice","bob"]'  # Custom protocol format: [current_username,other_username]
         expected = {
-            "password": "password123",
-            "username": "testuser"
+            "current_username": "alice",
+            "other_username": "bob"
         }
-        result = self.protocol.deserialize(login_data, "login_register")
+        result = self.protocol.deserialize(chat_data, "load_private_chat")
+        self.assertEqual(result, expected)
+        
+        # Test receive_message_r action
+        msg_data = b'["hello","alice","123","2025-02-12 17:46:43"]'  # Custom protocol format: [message,sender_username,sender_uuid,timestamp]
+        expected = {
+            "message": "hello",
+            "sender_username": "alice",
+            "sender_uuid": "123",
+            "timestamp": "2025-02-12 17:46:43"
+        }
+        result = self.protocol.deserialize(msg_data, "receive_message_r")
         self.assertEqual(result, expected)
         
         # Test invalid action
-        result = self.protocol.deserialize(login_data, "invalid_action")
+        result = self.protocol.deserialize(chat_data, "invalid_action")
         self.assertEqual(result, {})
         
         # Test mismatched field count
-        result = self.protocol.deserialize(b'["single_value"]', "login_register")
+        result = self.protocol.deserialize(b'{"single":"value"}', "receive_message_r")
         self.assertEqual(result, {})
 
     def test_parse_dict(self):

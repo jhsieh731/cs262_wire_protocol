@@ -184,6 +184,7 @@ class Message:
         elif self.protocol_mode == "custom":
             logger.info(f"Line 166 - Request content: {self.request['content']}")
             content = self.custom_protocol.serialize(self.request["content"])
+            logger.info(f"Line 169 - Request content serialized: {content!r}")
         
         # Create the message
         action = self.request["action"]
@@ -283,6 +284,7 @@ class Message:
                 computed_checksum = self.custom_protocol.compute_checksum(data)
                 if computed_checksum != self.header["checksum"]:
                     action = "error"
+                    logger.error("Checksum does not match")
             logger.info(f"Decoded response: {decoded_response}")
             self.response = decoded_response
             # Server response in gui

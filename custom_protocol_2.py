@@ -5,6 +5,7 @@ class CustomProtocol:
             "action",
             "content-length",
             "checksum",
+            "current_username",
             "error",
             "message",
             "messages", # list of dicts
@@ -12,6 +13,7 @@ class CustomProtocol:
             "num_messages",
             "num_pending",
             "offset",
+            "other_username",
             "password",
             "recipient_username",
             "search_term",
@@ -43,7 +45,7 @@ class CustomProtocol:
             "search_accounts_r": ["accounts", "total_count"],
             "load_messages_r": ["messages", "total_count"],
             "send_message_r": ["error", "success"],
-            "receive_message_r": ["message", "sender_username", "sender_uuid"],
+            "receive_message_r": ["message", "sender_username", "sender_uuid", "timestamp"],
             "load_undelivered_r": ["messages"],
             "delete_messages_r": ["total_count"],
             "delete_account_r": ["error", "success"],
@@ -51,6 +53,8 @@ class CustomProtocol:
             "refresh_accounts_r": ["message"],
             "check_username_r": ["message"],
             "register_r": ["uuid"],
+            "load_private_chat": ["current_username", "other_username"],
+            "load_private_chat_r": ["messages", "success"],
         }
 
 
