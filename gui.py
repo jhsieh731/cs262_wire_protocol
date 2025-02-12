@@ -27,6 +27,7 @@ class ClientGUI:
         self.login_frame = tk.Frame(master)
         self.chat_frame = tk.Frame(master)
         self.create_account_frame = tk.Frame(master)
+        self.register_frame = tk.Frame(master)
         self.error_frame = tk.Frame(master)
         self.is_threading = False
         self.duplicated_password = False
@@ -48,6 +49,7 @@ class ClientGUI:
         self.clear_frame(self.login_frame)
         self.clear_frame(self.chat_frame)
         self.clear_frame(self.create_account_frame)
+        self.clear_frame(self.register_frame)
         self.error_frame.pack()
 
         self.error_label = tk.Label(self.error_frame, text="Error", fg="red", font=("Helvetica", 16))
@@ -63,6 +65,7 @@ class ClientGUI:
         self.clear_frame(self.chat_frame)
         self.clear_frame(self.login_frame)
         self.clear_frame(self.error_frame)
+        self.clear_frame(self.register_frame)
 
         self.create_account_frame.pack()
 
@@ -81,10 +84,40 @@ class ClientGUI:
         self.back_button = tk.Button(self.create_account_frame, text="Back", command=self.create_login_page)
         self.back_button.pack(padx=10, pady=5)
 
+    def create_register_page(self):
+        self.clear_frame(self.chat_frame)
+        self.clear_frame(self.login_frame)
+        self.clear_frame(self.error_frame)
+        self.clear_frame(self.create_account_frame)
+
+        self.register_frame.pack()
+
+        self.create_account_label = tk.Label(self.register_frame, text="Create Account", font=("Helvetica", 16))
+        self.create_account_label.pack(padx=10, pady=10)
+
+        self.register_username_label = tk.Label(self.register_frame, text="Username:")
+        self.register_username_label.pack(padx=10, pady=5)
+        self.register_username_entry = tk.Entry(self.register_frame)
+        self.register_username_entry.pack(padx=10, pady=5)
+        # self.register_username_entry.config(state=tk.DISABLED)
+
+        self.register_password_label = tk.Label(self.register_frame, text="Password:")
+        self.register_password_label.pack(padx=10, pady=5)
+        self.register_password_entry = tk.Entry(self.register_frame, show="*")
+        self.register_password_entry.pack(padx=10, pady=5)
+
+
+        self.register_button = tk.Button(self.register_frame, text="Register", command=self.register)
+        self.register_button.pack(padx=10, pady=5)
+
+        self.back_button = tk.Button(self.register_frame, text="Back", command=self.create_login_page)
+        self.back_button.pack(padx=10, pady=5)
+
     def create_login_page(self):
         self.clear_frame(self.chat_frame)
         self.clear_frame(self.error_frame)
         self.clear_frame(self.create_account_frame)
+        self.clear_frame(self.register_frame)
 
         self.login_frame.pack()
 
@@ -114,6 +147,7 @@ class ClientGUI:
         self.clear_frame(self.login_frame)
         self.clear_frame(self.error_frame)
         self.clear_frame(self.create_account_frame)
+        self.clear_frame(self.register_frame)
         self.chat_frame.pack(fill=tk.BOTH, expand=True)
 
         # First column: Accounts list with search bar and pagination
@@ -316,7 +350,7 @@ class ClientGUI:
         self.thread_send(request)
 
     def register(self):
-        username = self.username_entry.get()
+        username = self.register_username_entry.get()
         password = self.register_password_entry.get()
         if username and password:
             request = {
@@ -527,44 +561,22 @@ class ClientGUI:
                 self.username_entry.insert(0, entered_username)
 
             else:
-                self.create_account_frame.tkraise()
+                self.create_register_page()
+                self.register_username_entry.insert(0, entered_username)
+                # disable it
+                self.register_username_entry.config(state=tk.DISABLED)
 
-                # disable username entry
-                self.username_entry.config(state=tk.DISABLED)
-
-                # remove Create Account button
-                self.create_button.pack_forget()
-                self.back_button.pack_forget()
-
-                # Ensure the password entry field is only created once
-                if not self.duplicated_password:
-                    # add password field
-                    self.register_password_label = tk.Label(self.create_account_frame, text="Password:")
-                    self.register_password_label.pack(padx=10, pady=5)
-                    self.register_password_entry = tk.Entry(self.create_account_frame, show="*")
-                    self.register_password_entry.pack(padx=10, pady=5)
-
-                    # add new create account button
-                    self.create_account_button = tk.Button(self.create_account_frame, text="Create Account", command=self.register)
-                    self.create_account_button.pack(padx=10, pady=5)
-
-                    # re-add back button
-                    self.back_button = tk.Button(self.create_account_frame, text="Back", command=self.create_login_page)
-                    self.back_button.pack(padx=10, pady=5)
 
         elif response_type == "register_r":
             if response.get("error", None):
                 self.create_error_page(response.get("error", "An error occurred"))
             else:
-                self.username = self.username_entry.get()
+                self.username = self.register_username_entry.get()
                 self.user_uuid = response.get("uuid", None)
                 self.create_chat_page()
-
 
         
         elif response_type == "error": # Handle error response
             logger.error(f"Error: {response.get('error', 'An error occurred')}")
             messagebox.showerror("Error", response.get("error", "An error occurred"), icon="warning")
     
-
-

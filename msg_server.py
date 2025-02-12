@@ -209,7 +209,6 @@ class Message:
                     socket_data._send_buffer += refresh_message
                     socket_data._set_selector_events_mask("w")
                 
-
                 response_content = {
                     "uuid": uuid,
                 }
