@@ -198,12 +198,17 @@ class Message:
                     content_length=len(refresh_content_bytes)
                 )
                 
+                # Collect sockets to notify first
+                sockets_to_notify = []
                 for _, data in self.selector.get_map().items():
                     if data.data and isinstance(data.data, Message) and data.data.sock != self.sock:
-                        data.data._send_buffer += refresh_message
-                        data.data._set_selector_events_mask("w")
+                        sockets_to_notify.append(data.data)
                 
-
+                # Then notify each socket
+                for socket_data in sockets_to_notify:
+                    socket_data._send_buffer += refresh_message
+                    socket_data._set_selector_events_mask("w")
+                
                 response_content = {
                     "uuid": uuid,
                 }
