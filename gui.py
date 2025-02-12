@@ -135,9 +135,6 @@ class ClientGUI:
         
         self.delete_account_button = tk.Button(account_buttons_frame, text="Delete my account", command=self.create_confirm_delete_account_page, fg="red")
         self.delete_account_button.pack(side=tk.LEFT, padx=5)
-        
-        self.logout_button = tk.Button(account_buttons_frame, text="Log out", command=self.logout)
-        self.logout_button.pack(side=tk.LEFT, padx=5)
 
         self.accounts_listbox = tk.Listbox(self.accounts_frame)
         self.accounts_listbox.pack(padx=10, pady=5, fill=tk.BOTH, expand=True)
@@ -211,10 +208,6 @@ class ClientGUI:
 
         # Load initial data
         self.load_page_data()
-
-
-    def logout(self):
-        self.create_login_page()
     
     def create_confirm_delete_account_page(self):
         # Create a dialog window
