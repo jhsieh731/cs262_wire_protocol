@@ -8,7 +8,7 @@ from database import MessageDatabase
 from custom_protocol_2 import CustomProtocol
 from logger import set_logger
 
-server_logger = set_logger("msg_server", "server.log")
+logger = set_logger("msg_server", "msg_server.log")
 
 db = MessageDatabase()
 
@@ -60,7 +60,7 @@ class Message:
     def _write(self):
         """Write to the client socket"""
         if self._send_buffer:
-            server_logger.info(f"Sending {self._send_buffer!r} to {self.addr}")
+            logger.info(f"Sending {self._send_buffer!r} to {self.addr}")
             try:
                 # Should be ready to write
                 sent = self.sock.send(self._send_buffer)
@@ -141,12 +141,12 @@ class Message:
 
         response_content = {}
         action = "error"
-        server_logger.info(f"action: {self.header['action']}")
+        logger.info(f"action: {self.header['action']}")
         # Create response content and encode it
         if self.header["action"] == "login_register":
             # try to login
             accounts = db.login_or_create_account(request_content.get("username"), request_content.get("password"), str(self.addr))
-            server_logger.info(f"Account lookup result: {accounts}")
+            logger.info(f"Account lookup result: {accounts}")
             if (len(accounts) != 1):
                 response_content = {
                     "message": "Please try again",
@@ -157,12 +157,39 @@ class Message:
                     "uuid": accounts[0]["userid"],
                 }
                 action = "login_register_r"
+                # If this was a new account creation (accounts[0] has a new userid)
+                if accounts[0].get("new_account", False):
+                    # Notify all other clients to refresh their account lists
+                    refresh_content = {
+                        "message": "Account created"
+                    }
+                    if self.protocol_mode == "json":
+                        refresh_content_bytes = self._json_encode(refresh_content, "utf-8")
+                    else:
+                        refresh_content_bytes = self.custom_protocol.serialize(refresh_content)
+                    
+                    refresh_message = self._create_message(
+                        content_bytes=refresh_content_bytes,
+                        action="refresh_accounts_r",
+                        content_length=len(refresh_content_bytes)
+                    )
+                    
+                    # Collect sockets to notify first
+                    sockets_to_notify = []
+                    for key, data in self.selector.get_map().items():
+                        if data.data and isinstance(data.data, Message) and data.data.sock != self.sock:
+                            sockets_to_notify.append(data.data)
+                    
+                    # Then notify each socket
+                    for socket_data in sockets_to_notify:
+                        socket_data._send_buffer += refresh_message
+                        socket_data._set_selector_events_mask("w")
         elif self.header["action"] == "load_page_data":
             user_uuid = request_content.get("uuid")
 
             # Load page data
             messages, num_pending, accounts, total_count = db.load_page_data(user_uuid)
-            server_logger.info(f"Loaded page data from db")
+            logger.info(f"Loaded page data from db")
             
             response_content = {
                 "messages": messages,
@@ -178,7 +205,7 @@ class Message:
             
             # Search for accounts with pagination
             accounts, total_count = db.search_accounts(search_term, offset)
-            server_logger.info(f"Found {len(accounts)} accounts (total: {total_count})")
+            logger.info(f"Found {len(accounts)} accounts (total: {total_count})")
             
             response_content = {
                 "accounts": accounts,
@@ -188,10 +215,10 @@ class Message:
         elif self.header["action"] == "load_messages":
             user_uuid = request_content.get("uuid")
             num_messages = request_content.get("num_messages")
-            server_logger.info(f"Loading messages for user {user_uuid} and num_messages {num_messages}")
+            logger.info(f"Loading messages for user {user_uuid} and num_messages {num_messages}")
             
             messages, total_undelivered = db.load_messages(user_uuid, num_messages)
-            server_logger.info(f"Found {len(messages)} messages (total: {total_undelivered})")
+            logger.info(f"Found {len(messages)} messages (total: {total_undelivered})")
             
             response_content = {
                 "messages": messages,
@@ -205,7 +232,7 @@ class Message:
             message_text = request_content.get("message")
             timestamp = request_content.get("timestamp")
 
-            server_logger.info(f"Message details - Sender: {sender_uuid}, Recipient: {recipient_username}, Message: {message_text}, Time: {timestamp}")
+            logger.info(f"Message details - Sender: {sender_uuid}, Recipient: {recipient_username}, Message: {message_text}, Time: {timestamp}")
             
             # Get recipient's UUID
             success_status, error_msg, recipient_uuid = db.get_user_uuid(recipient_username)
@@ -213,7 +240,7 @@ class Message:
                 # Get recipient's associated socket
                 recipient_socket = db.get_associated_socket(recipient_uuid)
                 sender_username = db.get_user_username(sender_uuid)
-                server_logger.info(sender_username)
+                logger.info(sender_username)
                 
                 # ensure all fields are there
                 if recipient_socket and sender_username:
@@ -244,16 +271,16 @@ class Message:
                         # Find the socket object associated with the recipient
                         for key, data in self.selector.get_map().items():
                             if data.data and isinstance(data.data, Message) and str(data.data.addr) == recipient_socket:
-                                server_logger.info(f"Relaying message to {recipient_socket}")
+                                logger.info(f"Relaying message to {recipient_socket}")
                                 status = True
                                 data.data._send_buffer += relay_message
                                 data.data._set_selector_events_mask("w")
                                 break
                         else:
-                            server_logger.error(f"Error: Could not find recipient socket {recipient_socket}")
+                            logger.error(f"Error: Could not find recipient socket {recipient_socket}")
                             status = False
                     except Exception as e:
-                        server_logger.error(f"Error relaying message: {e}")
+                        logger.error(f"Error relaying message: {e}")
 
                 # Store the message
                 success_status, error_msg = db.store_message(sender_uuid, recipient_uuid, message_text, status, timestamp)
@@ -267,11 +294,11 @@ class Message:
         elif self.header["action"] == "load_undelivered":
             user_uuid = request_content.get("uuid", None)
             num_messages = request_content.get("num_messages", 0)
-            server_logger.info(f"Loading undelivered messages for user {user_uuid}")
+            logger.info(f"Loading undelivered messages for user {user_uuid}")
             
             # Load undelivered messages from db
             messages = db.load_undelivered(user_uuid, num_messages)
-            server_logger.info(f"Found {len(messages)} undelivered messages")
+            logger.info(f"Found {len(messages)} undelivered messages")
             
             response_content = {
                 "messages": messages,
@@ -290,13 +317,36 @@ class Message:
             
             # Get the stored password from database
             stored_password = db.get_user_password(user_uuid)
-            server_logger.info(f"Retrieved stored password: {'Found' if stored_password else 'Not found'}")
+            logger.info(f"Retrieved stored password: {'Found' if stored_password else 'Not found'}")
             success = False
             error_message = ""
             if stored_password == password:
                 # Password matches, delete the account
                 if db.delete_user(user_uuid):
                     success = True
+                    # Notify all other clients to refresh their account lists
+                    response_content = {}
+                    if self.protocol_mode == "json":
+                        response_content_bytes = self._json_encode(response_content, "utf-8")
+                    else:
+                        response_content_bytes = self.custom_protocol.serialize(response_content)
+                    
+                    refresh_message = self._create_message(
+                        content_bytes=response_content_bytes,
+                        action="refresh_accounts_r",
+                        content_length=len(response_content_bytes)
+                    )
+                    
+                    # Collect sockets to notify first
+                    sockets_to_notify = []
+                    for key, data in self.selector.get_map().items():
+                        if data.data and isinstance(data.data, Message) and data.data.sock != self.sock:
+                            sockets_to_notify.append(data.data)
+                    
+                    # Then notify each socket
+                    for socket_data in sockets_to_notify:
+                        socket_data._send_buffer += refresh_message
+                        socket_data._set_selector_events_mask("w")
                 else:
                     error_message = "Failed to delete account"
             else:
@@ -332,10 +382,10 @@ class Message:
     def process_events(self, mask):
         """Process selector events (first step)"""
         if mask & selectors.EVENT_READ:
-            server_logger.debug("Read event received")
+            logger.debug("Read event received")
             self.read()
         if mask & selectors.EVENT_WRITE:
-            server_logger.debug("Write event received")
+            logger.debug("Write event received")
             self.write()
 
     def read(self):
@@ -363,11 +413,11 @@ class Message:
 
     def close(self):
         """Close the connection to the client socket"""
-        server_logger.info(f"Closing connection to {self.addr}")
+        logger.info(f"Closing connection to {self.addr}")
         try:
             self.selector.unregister(self.sock)
         except Exception as e:
-            server_logger.error(
+            logger.error(
                 f"Error: selector.unregister() exception for "
                 f"{self.addr}: {e!r}"
             )
@@ -375,7 +425,7 @@ class Message:
         try:
             self.sock.close()
         except OSError as e:
-            server_logger.error(f"Error: socket.close() exception for {self.addr}: {e!r}")
+            logger.error(f"Error: socket.close() exception for {self.addr}: {e!r}")
         finally:
             # Delete reference to socket object for garbage collection
             self.sock = None
@@ -413,6 +463,10 @@ class Message:
         hdrlen = self._header_len
 
         if len(self._recv_buffer) >= hdrlen:
+            # Validate protocol mode
+            if self.protocol_mode not in ["json", "custom"]:
+                raise ValueError(f"Invalid protocol mode {self.protocol_mode!r}")
+
             # Decode the header based on the protocol mode
             if self.protocol_mode == "json":
                 self.header = self._json_decode(
@@ -437,7 +491,7 @@ class Message:
         data = self._recv_buffer[:content_len]
         self._recv_buffer = self._recv_buffer[content_len:]
         self.request = data
-        server_logger.info(f"Stored request data: {self.request!r}")
+        logger.info(f"Stored request data: {self.request!r}")
         # Set selector to listen for write events, we're ready to respond
         self._set_selector_events_mask("w")
 

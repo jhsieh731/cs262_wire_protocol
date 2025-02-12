@@ -46,6 +46,7 @@ class CustomProtocol:
             "delete_messages_r": ["total_count"],
             "delete_account_r": ["error", "success"],
             "error": ["error"],
+            "refresh_accounts_r": ["message"],
         }
 
 
@@ -131,8 +132,20 @@ class CustomProtocol:
         items = CustomProtocol._split_items(data)
         for item in items:
             if ":" in item:
-                key, value = item.split(":", 1)
-                result[CustomProtocol._unescape_key(key)] = CustomProtocol.deserialize_part(value)
+                # Handle quoted keys by finding the first colon that's not inside quotes
+                in_quotes = False
+                colon_pos = -1
+                for i, char in enumerate(item):
+                    if char == '"':
+                        in_quotes = not in_quotes
+                    elif char == ':' and not in_quotes:
+                        colon_pos = i
+                        break
+                
+                if colon_pos != -1:
+                    key = item[:colon_pos]
+                    value = item[colon_pos + 1:]
+                    result[CustomProtocol._unescape_key(key)] = CustomProtocol.deserialize_part(value)
         return result
 
     @staticmethod

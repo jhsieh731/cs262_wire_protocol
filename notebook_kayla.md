@@ -105,3 +105,16 @@ TODO: Code review (10 minutes)
     On Sunday 2/16, turn in:
         Review for each of the other groups
         Grade of 1-5
+
+## Demo Script
+
+There should be two existing users, "existing_user_1" and "existing_user_2", in the db
+
+1. Client 1: Log in as existing_user_1
+2. Client 1: Send message to existing_user_2
+3. Client 2: Log in as existing_user_2
+4. Client 2: See undelivered message
+5. Client 2: Delete message
+6. Client 2: Delete account
+7. Client 3: Create account as user_3
+8. Client 1: Send message to user_3

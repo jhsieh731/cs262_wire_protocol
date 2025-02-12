@@ -4,21 +4,9 @@ import selectors
 import struct
 import logging
 from custom_protocol_2 import CustomProtocol
+from logger import set_logger
 
-# Set up logging
-client_logger = logging.getLogger('msg_client')
-client_logger.setLevel(logging.INFO)
-
-# Create file handler
-fh = logging.FileHandler('msg_client.log')
-fh.setLevel(logging.INFO)
-
-# Create formatter
-formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-fh.setFormatter(formatter)
-
-# Add handler to logger
-client_logger.addHandler(fh)
+logger = set_logger('msg_client', 'msg_client.log')
 
 
 # TODO: link this with client/server...
@@ -71,9 +59,9 @@ class Message:
 
     def _write(self):
         """Write to the socket."""
-        print("_write")
+        logger.info("Writing to socket")
         if self._send_buffer:
-            client_logger.info(f"Sending {self._send_buffer!r} to {self.addr}")
+            logger.info(f"Sending {self._send_buffer!r} to {self.addr}")
             try:
                 # Should be ready to write
                 sent = self.sock.send(self._send_buffer)
@@ -121,31 +109,37 @@ class Message:
         protocol_num = 0 if self.protocol_mode == "json" else 1
         message_hdr = struct.pack(">BBH", self.version, protocol_num, len(header_bytes))
         message = message_hdr + header_bytes + content_bytes
-        print(f"Created message: {message!r}")
+        logger.info(f"Created message: {message!r}")
         return message
 
     def process_events(self, mask):
         """Process selector events (step 1 of processing)"""
         if mask & selectors.EVENT_READ:
-            client_logger.debug("Read event received")
-            self.read()
+            logger.debug("Read event received")
+            try:
+                self.read()
+            except Exception as e:
+                logger.error(f"Error during read: {e}")
         if mask & selectors.EVENT_WRITE:
-            client_logger.debug("Write event received")
-            self.write()
+            logger.debug("Write event received")
+            try:
+                self.write()
+            except Exception as e:
+                logger.error(f"Error during write: {e}")
 
     def read(self):
         """Read response pipeline"""
         self._read()
-        print(f"Read data from {self.addr}: {self._recv_buffer!r}")
+        logger.info(f"Read data from {self.addr}: {self._recv_buffer!r}")
 
         if self._header_len is None:
             self.process_protoheader()
-            print(f"Read protoheader, new data: {self._recv_buffer!r}")
+            logger.info(f"Read protoheader, new data: {self._recv_buffer!r}")
 
         if self._header_len is not None:
             if self.header is None:
                 self.process_header()
-                print(f"Read header, new data: {self._recv_buffer!r}")
+                logger.info(f"Read header, new data: {self._recv_buffer!r}")
 
         if self.header:
             if self.response is None:
@@ -165,26 +159,23 @@ class Message:
 
     def close(self):
         """Close the socket connection."""
-        print(f"Closing connection to {self.addr}")
+        logger.info(f"Closing connection to {self.addr}")
         try:
             self.selector.unregister(self.sock)
         except Exception as e:
-            print(
-                f"Error: selector.unregister() exception for "
-                f"{self.addr}: {e!r}"
-            )
+            logger.error(f"Error: selector.unregister() exception for {self.addr}: {e!r}")
 
         try:
             self.sock.close()
         except OSError as e:
-            print(f"Error: socket.close() exception for {self.addr}: {e!r}")
+            logger.error(f"Error: socket.close() exception for {self.addr}: {e!r}")
         finally:
             # Delete reference to socket object for garbage collection
             self.sock = None
 
     def queue_request(self):
         """Prepare a request to be sent to the server."""
-        print("queue_request")
+        logger.info("Queuing request")
         # Reset state before queuing a new request
         self.reset_state()
         
@@ -192,7 +183,7 @@ class Message:
         if self.protocol_mode == "json":
             content = self._json_encode(self.request["content"], "utf-8")
         elif self.protocol_mode == "custom":
-            print(166, self.request["content"])
+            logger.info(f"Line 166 - Request content: {self.request['content']}")
             content = self.custom_protocol.serialize(self.request["content"])
         
         # Create the message
@@ -202,14 +193,14 @@ class Message:
             "action": action,
             "content_length": len(content),
         }
-        print(f"Request: {req!r}")
+        logger.info(f"Request: {req!r}")
         message = self._create_message(**req)
         self._send_buffer += message
         self._request_queued = True
 
     def process_protoheader(self):
         """Process the protocol header (read pipeline step 1)."""
-        print("process_protoheader")
+        logger.info("Processing protocol header")
         version_len = 1  # 1 byte for version
         protocol_len = 1  # 1 byte for protocol type
         hdrlen = 2  # fixed length for header length
@@ -230,11 +221,11 @@ class Message:
             
         # Then process header length
         if len(self._recv_buffer) >= hdrlen:
-            print("len of buffer: ", len(self._recv_buffer))
+            logger.info(f"len of buffer: {len(self._recv_buffer)}")
             self._header_len = struct.unpack(
                 ">H", self._recv_buffer[:hdrlen]
             )[0]
-            print(f"header length: {self._header_len}")
+            logger.info(f"header length: {self._header_len}")
             self._recv_buffer = self._recv_buffer[hdrlen:]
 
     def process_header(self):
@@ -250,20 +241,22 @@ class Message:
                 self.header = self.custom_protocol.deserialize(
                     self._recv_buffer[:hdrlen], "header"
                 )
+            else:
+                raise ValueError(f"Invalid protocol mode {self.protocol_mode!r}")
             
             # verify header
-            print(f"JSON header: {self.header!r}")
+            logger.info(f"JSON header: {self.header!r}")
             self._recv_buffer = self._recv_buffer[hdrlen:]
             for reqhdr in (
                 "content-length",
                 "action",
             ):
                 if reqhdr not in self.header:
-                    self.header["action"] = "error"
+                    raise ValueError(f"Missing required header field {reqhdr}")
 
     def reset_state(self):
         """Reset the message state to handle new requests/responses"""
-        print("Resetting message state")
+        logger.info("Resetting message state")
         self._header_len = None
         self.header = None
         self.response = None
@@ -272,12 +265,12 @@ class Message:
     def process_response(self):
         """Process the response (read pipeline step 3)."""
         content_len = self.header["content-length"]
-        print(f"len of buffer: {len(self._recv_buffer)}; Content length: {content_len}")
+        logger.info(f"len of buffer: {len(self._recv_buffer)}; Content length: {content_len}")
         # Check if the full response is in the buffer
         if not len(self._recv_buffer) >= content_len:
             return
         data = self._recv_buffer[:content_len]
-        print(f"Response content: {data!r}")
+        logger.info(f"Response content: {data!r}")
         self._recv_buffer = self._recv_buffer[content_len:]
         action = self.header["action"]
         
@@ -291,14 +284,14 @@ class Message:
                 computed_checksum = self.custom_protocol.compute_checksum(data)
                 if computed_checksum != self.header["checksum"]:
                     action = "error"
-            print(f"Decoded response: {decoded_response}")
+            logger.info(f"Decoded response: {decoded_response}")
             self.response = decoded_response
             # Server response in gui
             self.gui.handle_server_response(decoded_response, action)
             # Done reading, reset Message class for next message
             self.reset_state()
         except Exception as e:
-            print(f"Error decoding response: {e}")
-            print(f"Raw data: {data}")
+            logger.error(f"Error decoding response: {e}")
+            logger.error(f"Raw data that caused error: {data}")
 
         

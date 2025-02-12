@@ -3,7 +3,9 @@ import hashlib
 import threading
 import tkinter as tk
 from tkinter import scrolledtext, messagebox
+from logger import set_logger
 
+logger = set_logger("gui", "gui.log")
 
 # GUI Setup
 class ClientGUI:
@@ -94,7 +96,7 @@ class ClientGUI:
         self.search_button.pack(side=tk.LEFT)
 
         # Delete Account Button
-        self.delete_account_button = tk.Button(self.accounts_frame, text="Delete my account", command=self.create_confirm_delete_account, fg="red")
+        self.delete_account_button = tk.Button(self.accounts_frame, text="Delete my account", command=self.create_confirm_delete_account_page, fg="red")
         self.delete_account_button.pack(padx=10, pady=5)
 
         self.accounts_listbox = tk.Listbox(self.accounts_frame)
@@ -159,7 +161,7 @@ class ClientGUI:
 
     
 
-    def create_confirm_delete_account(self):
+    def create_confirm_delete_account_page(self):
         # Create a dialog window
         self.dialog = tk.Toplevel(self.master)
         self.dialog.title("Confirm Account Deletion")
@@ -233,7 +235,7 @@ class ClientGUI:
             self.accounts_listbox.insert(tk.END, account[1])
 
     def update_messages_list(self, messages, total_undelivered):
-        print(f"Updating messages list with {len(messages)} messages")
+        logger.info(f"Updating messages list with {len(messages)} messages")
         self.messages_listbox.delete(0, tk.END)
         self.msgid_map.clear()  # Clear the previous mapping
         for index, message in enumerate(messages):
@@ -301,7 +303,7 @@ class ClientGUI:
 
     def load_messages(self):
         num_messages = self.num_messages
-        print(f"Loading {num_messages} messages")
+        logger.info(f"Loading {num_messages} messages")
         request = {
             "action": "load_messages",
             "content": {"num_messages": num_messages, "uuid": self.user_uuid},
@@ -312,7 +314,7 @@ class ClientGUI:
     def send_message(self):
             msg = self.entry.get()
             if msg and self.selected_account:
-                print(f"Selected account: {self.selected_account}, Message: {msg}")
+                logger.info(f"Selected account: {self.selected_account}, Message: {msg}")
                 self.entry.delete(0, tk.END)
                 # add message to the message display
                 self.message_display.config(state=tk.NORMAL)
@@ -360,7 +362,7 @@ class ClientGUI:
     # ===================================================================
     def handle_server_response(self, response, response_type):
         # response_type = response["response_type"]
-        print(f"Action: {response_type}, Response: {response}")
+        logger.info(f"Action: {response_type}, Response: {response}")
         
         if response_type == "delete_account_r":
             if response["success"]:
@@ -393,10 +395,14 @@ class ClientGUI:
             self.update_accounts_list(accounts)
             self.update_messages_list(messages, total_undelivered)
 
+        elif response_type == "refresh_accounts_r":
+            # Server notified us to refresh the accounts list
+            self.search_accounts()
+
         elif response_type == "search_accounts_r":
             accounts = response.get("accounts", [])
             total_count = response.get("total_count", 0)
-            print(f"Received {len(accounts)} accounts (total: {total_count})")
+            logger.info(f"Received {len(accounts)} accounts (total: {total_count})")
             
             # Update the accounts list
             self.update_accounts_list(accounts)
@@ -411,7 +417,7 @@ class ClientGUI:
         elif response_type == "receive_message_r":            
             sender = response.get("sender_username", "Unknown")
             message = response.get("message", "")
-            print(f"Received message from {sender}: {message}")
+            logger.info(f"Received message from {sender}: {message}")
             self.message_display.config(state=tk.NORMAL)
             self.message_display.insert(tk.END, f"{sender}: {message}\n")
             self.message_display.config(state=tk.DISABLED)
@@ -421,15 +427,15 @@ class ClientGUI:
             self.load_messages()
         
         elif response_type == "send_message_r":
-            print("send message status", response.get("status", "error"))
+            logger.info(f"send message status: {response.get('status', 'error')}")
             success = response.get("success", "error")
             if success:
-                print("Message sent successfully")
+                logger.info("Message sent successfully")
                 self.num_messages += 1
                 self.load_messages()
 
         elif response_type == "delete_messages_r":
-            print("Messages deleted successfully")
+            logger.info("Messages deleted successfully")
             num_deleted = response.get("total_count", 0)
             self.num_messages -= num_deleted
             self.load_messages()
@@ -439,22 +445,22 @@ class ClientGUI:
             total_undelivered = response.get("total_count", 0)
             self.num_messages = len(messages)
             self.num_undelivered = total_undelivered
-            print(f"Received {len(messages)} messages")
+            logger.info(f"Received {len(messages)} messages")
             self.update_messages_list(messages, total_undelivered)
 
         elif response_type == "load_undelivered_r":
             messages = response.get("messages", [])
             self.num_undelivered -= len(messages)
             self.num_messages += len(messages)
-            print(f"Received {len(messages)} undelivered messages")
+            logger.info(f"Received {len(messages)} undelivered messages")
             self.load_messages()
 
         elif response_type == "login_error":
-            print("Error: ", response.get("message", "An error occurred"))
+            logger.error(f"Error: {response.get('message', 'An error occurred')}")
             self.create_error_page(response.get("message", "An error occurred"))
         
         elif response_type == "error": # Handle error response
-            print("Error: ", response.get("error", "An error occurred"))
+            logger.error(f"Error: {response.get('error', 'An error occurred')}")
             messagebox.showerror("Error", response.get("error", "An error occurred"), icon="warning")
     
 

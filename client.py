@@ -4,7 +4,9 @@ import selectors
 import tkinter as tk
 import msg_client
 from gui import ClientGUI
+from logger import set_logger
 
+logger = set_logger("client", "client.log")
 
 # Networking Setup
 sel = None
@@ -33,7 +35,7 @@ def send_to_server(request):
 
 # Thread for handling server communication
 def network_thread(request):
-    print(request)
+    logger.info(request)
     start_connection(host, port, gui, request)
     try:
         while True:
@@ -43,7 +45,7 @@ def network_thread(request):
                 try:
                     message.process_events(mask)
                 except Exception:
-                    print(
+                    logger.info(
                         f"Main: Error: Exception for {message.addr}"
                     )
                     message.close()
@@ -53,7 +55,7 @@ def network_thread(request):
     except KeyboardInterrupt:
         logger.info("Caught keyboard interrupt, exiting")
     finally:
-        print("selectors closed")
+        logger.info("selectors closed")
         sel.close()
 
 
@@ -64,7 +66,7 @@ gui = ClientGUI(root, send_to_server, network_thread)
 # Networking Functions
 def start_connection(host, port, gui, request):
     addr = (host, port)
-    print(f"Starting connection to {addr}")
+    logger.info(f"Starting connection to {addr}")
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.setblocking(False)
     sock.connect_ex(addr)
@@ -73,17 +75,15 @@ def start_connection(host, port, gui, request):
     sel.register(sock, events, data=message)
 
 
-
-
 if __name__ == '__main__':
     if len(sys.argv) != 3:
-        print(f"Usage: {sys.argv[0]} <host> <port>")
+        logger.info(f"Usage: {sys.argv[0]} <host> <port>")
         sys.exit(1)
     try:
         server_host = sys.argv[1]
         server_port = int(sys.argv[2])
     except ValueError:
-        print(f"Error: Port must be a number")
+        logger.info(f"Error: Port must be a number")
         sys.exit(1)
     
     # Initialize client

@@ -1,6 +1,7 @@
 import sys
 import socket
 import selectors
+import logging
 from msg_server import Message
 import json
 from logger import set_logger
@@ -52,14 +53,14 @@ def run_server(accepted_versions):
                     try:
                         message.process_events(mask)
                     except Exception as e:
-                        print(f"Error processing events for {message.addr}: {e}")
+                        logger.error(f"Error processing events for {message.addr}: {e}")
                         message.close()
     except KeyboardInterrupt:
-        print("\nCaught keyboard interrupt, shutting down...")
+        logger.info("\nCaught keyboard interrupt, shutting down...")
     except Exception as e:
-        print(f"\nError in server: {e}")
+        logger.info(f"\nError in server: {e}")
     finally:
-        print("Closing all connections...")
+        logger.info("Closing all connections...")
         # Close all open sockets
         for key in list(sel.get_map().values()):
             sel.unregister(key.fileobj)
@@ -78,8 +79,8 @@ if __name__ == '__main__':
         lsock = initialize_server(host, port)
         run_server(accepted_versions)
     except Exception as e:
-        print(f"Error: {e}")
+        logger.info(f"Error: {e}")
         sys.exit(1)
     except KeyboardInterrupt:
-        print("\nShutting down server...")
+        logger.info("\nShutting down server...")
         sys.exit(0)
