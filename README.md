@@ -59,6 +59,10 @@ Handles sending and receiving of structured messages between the client and serv
 - `_create_response_content()`: Generates response content based on the received request, integrating database operations.
 - `process_request()`: Processes and validates incoming requests, ensuring data consistency.
 
+### Custom Protocol
+
+Our protocol listifies a given dictionary and sets a pre-defined order in which fields will show up. This reduces the size of the request by about 25% compared to JSON. We measured this by looking at the worst response that has to be loaded, load_page_data_r, which takes ~330B in custom method and ~430 in json. We basically serialized and deserialized by implementing glorified str() and eval().
+
 ## GUI Implementation
 
 ### ClientGUI Class
@@ -94,6 +98,8 @@ For development and testing, these should all be included natively in the offici
 
 ## Running the Application
 
+0. Ensure the protocol mode is correct in config.json.
+
 1. Start the server:
 
    ```bash
@@ -108,7 +114,7 @@ For development and testing, these should all be included natively in the offici
    python client.py <host> <port> <protocol>
    ```
 
-   Where `<host>` is the server's address and `<port>` is the server's port number.
+   Where `<host>` is the server's address and `<port>` is the server's port number. `<protocol>` should be either "custom" or "json".
 
 ## Notes
 
