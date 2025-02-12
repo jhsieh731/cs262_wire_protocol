@@ -75,6 +75,7 @@ if __name__ == '__main__':
             config = json.load(f)
         host = config['host']
         port = config['port']
+        protocol = config['protocol']
         accepted_versions = config['accepted_versions']
         if port < 1024 and port != 0:  # Avoid privileged ports
             print("Error: Please use a port number >= 1024")
