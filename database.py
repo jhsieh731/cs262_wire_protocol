@@ -439,10 +439,23 @@ class MessageDatabase:
         try:
             conn = self.connect()
             if conn is None:
-                return 0
+                return []
+
+            # Initialize UUID counter dictionary
+            uuid_counter = {}
+            cursor = conn.cursor()
+
+            # First get all UUIDs for the messages
+            for msg_id in msg_ids:
+                cursor.execute("SELECT senderuuid, recipientuuid FROM messages WHERE msgid = ?", (msg_id,))
+                result = cursor.fetchone()
+                if result:
+                    sender_uuid, recipient_uuid = result
+                    # Increment counter for both sender and recipient
+                    uuid_counter[sender_uuid] = uuid_counter.get(sender_uuid, 0) + 1
+                    uuid_counter[recipient_uuid] = uuid_counter.get(recipient_uuid, 0) + 1
 
             # run deletions
-            cursor = conn.cursor()
             for msg_id in msg_ids:
                 cursor.execute("DELETE FROM messages WHERE msgid = ?", (msg_id,))
                 logger.info(f"Deleted message: {msg_id}")
@@ -457,13 +470,14 @@ class MessageDatabase:
             num_remaining = cursor.fetchone()[0]
             logger.info(f"Number of messages remaining: {num_remaining}")
 
-            num_deleted = len(msg_ids) - num_remaining
-            logger.info(f"Deleted {num_deleted} messages")
-            return num_deleted
+            # Convert uuid_counter to list of tuples
+            uuid_counts = [(uuid, count) for uuid, count in uuid_counter.items()]
+            logger.info(f"UUID deletion counts: {uuid_counts}")
+            return uuid_counts
 
         except sqlite3.Error as e:
             logger.error(f"Error deleting messages: {e}")
-            return 0
+            return []
         finally:
             if conn:
                 conn.close()

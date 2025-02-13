@@ -75,7 +75,8 @@ class TestClient(unittest.TestCase):
             # Call initialize_client
             test_host = 'test_host'
             test_port = 12345
-            sel = client.initialize_client(test_host, test_port)
+            test_protocol = 'json'
+            sel = client.initialize_client(test_host, test_port, test_protocol)
             
             # Verify selector was created
             self.assertEqual(sel, mock_selector)
@@ -127,11 +128,11 @@ class TestClient(unittest.TestCase):
     def test_start_connection(self):
         """Test connection initialization."""
         request = {"action": "test"}
-        client.start_connection('localhost', 65432, self.gui, request)
+        client.start_connection(self.gui, request)
         
         # Verify socket setup
         self.mock_socket.setblocking.assert_called_once_with(False)
-        self.mock_socket.connect_ex.assert_called_once_with(('localhost', 65432))
+        self.mock_socket.connect_ex.assert_called_once_with(('test_host', 12345))
         
         # Verify selector registration
         self.mock_selector.register.assert_called_once()
@@ -142,9 +143,10 @@ class TestClient(unittest.TestCase):
         self.mock_message_class.assert_called_once_with(
             self.mock_selector,
             self.mock_socket,
-            ('localhost', 65432),
+            ('test_host', 12345),
             self.gui,
-            request
+            request,
+            'json'
         )
 
 if __name__ == '__main__':

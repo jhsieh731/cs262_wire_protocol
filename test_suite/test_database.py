@@ -316,7 +316,7 @@ class TestDatabase(unittest.TestCase):
 
         # Test deleting messages
         num_deleted = self.db.delete_messages(msg_ids)
-        self.assertEqual(num_deleted, len(msg_ids))
+        self.assertEqual(num_deleted, [(1, 2), (2, 2)])
 
         # Verify messages are deleted
         cursor.execute("SELECT COUNT(*) FROM messages WHERE recipientuuid = ?", (uuid2,))

@@ -73,7 +73,7 @@ class TestServer(unittest.TestCase):
         self.mock_socket.accept.return_value = (mock_client_socket, mock_addr)
         
         # Call accept_wrapper with accepted_versions
-        server.accept_wrapper(self.mock_socket, accepted_versions=[1])
+        server.accept_wrapper(self.mock_socket, accepted_versions=[1], protocol="custom")
         
         # Verify connection handling
         self.mock_socket.accept.assert_called_once()
@@ -97,7 +97,7 @@ class TestServer(unittest.TestCase):
         self.mock_selector.select.side_effect = [[(mock_key, selectors.EVENT_READ)], KeyboardInterrupt()]
         
         # Run the server
-        server.run_server(accepted_versions=[1])
+        server.run_server(accepted_versions=[1], protocol="custom")
         
         # Verify cleanup was performed
         self.mock_selector.close.assert_called_once()
@@ -118,7 +118,7 @@ class TestServer(unittest.TestCase):
         self.mock_selector.get_map.return_value = {1: mock_key}
         
         # Run the server
-        server.run_server(accepted_versions=[1])
+        server.run_server(accepted_versions=[1], protocol="custom")
         
         # Verify message was processed and cleanup was performed
         mock_message.process_events.assert_called_once_with(selectors.EVENT_READ)
@@ -141,7 +141,7 @@ class TestServer(unittest.TestCase):
         self.mock_selector.get_map.return_value = {1: mock_key}
         
         # Run the server
-        server.run_server(accepted_versions=[1])
+        server.run_server(accepted_versions=[1], protocol="custom")
         
         # Verify error handling and cleanup
         mock_message.process_events.assert_called_once_with(selectors.EVENT_READ)

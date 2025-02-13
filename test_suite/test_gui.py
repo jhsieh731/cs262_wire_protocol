@@ -192,11 +192,11 @@ class TestClientGUI(unittest.TestCase):
         """Test login/register functionality"""
         self.gui.username_entry.insert(0, "testuser")
         self.gui.password_entry.insert(0, "testpass")
-        self.gui.login_register()
+        self.gui.login()
         
         expected_password_hash = self.gui.hash_password("testpass")
         expected_request = {
-            "action": "login_register",
+            "action": "login",
             "content": {
                 "username": "testuser",
                 "password": expected_password_hash
@@ -237,7 +237,7 @@ class TestClientGUI(unittest.TestCase):
     def test_handle_server_response_login_register_r(self):
         """Test handling server login response"""
         response = {"uuid": "test-uuid"}
-        self.gui.handle_server_response(response, "login_register_r")
+        self.gui.handle_server_response(response, "login_r")
         self.assertEqual(self.gui.user_uuid, "test-uuid")
 
     def test_handle_server_response_load_page_data_r(self):
@@ -355,7 +355,7 @@ class TestClientGUI(unittest.TestCase):
         self.gui.delete_messages()
         expected_request = {
             "action": "delete_messages",
-            "content": {"msgids": ["msg1"]}
+            "content": {"msgids": ["msg1"], "deleter_uuid": None}
         }
         self.send_to_server.assert_called_with(expected_request)
 

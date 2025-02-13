@@ -1,7 +1,7 @@
 import unittest
 from custom_protocol_2 import CustomProtocol
 
-# to run: python3 -m unittest test_suite/test_custom_protocol.py -v
+# to run: python3 -m unittest test_suite/test_custom_protocol_2.py -v
 
 class TestCustomProtocol(unittest.TestCase):
     def setUp(self):
@@ -112,7 +112,7 @@ class TestCustomProtocol(unittest.TestCase):
             "password": "password123",
             "username": "testuser"
         }
-        result = self.protocol.deserialize(login_data, "login_register")
+        result = self.protocol.deserialize(login_data, "login")
         self.assertEqual(result, expected)
         
         # Test invalid action

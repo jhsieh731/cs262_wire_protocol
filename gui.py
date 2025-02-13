@@ -395,7 +395,7 @@ class ClientGUI:
         selected_msgids = [self.msgid_map[i] for i in selected_indices if i in self.msgid_map]
         request = {
             "action": "delete_messages",
-            "content": {"msgids": selected_msgids},
+            "content": {"msgids": selected_msgids, "deleter_uuid": self.user_uuid},
         }
         self.thread_send(request)
 
@@ -426,10 +426,6 @@ class ClientGUI:
             if msg and self.selected_account:
                 logger.info(f"Selected account: {self.selected_account}, Message: {msg}")
                 self.entry.delete(0, tk.END)
-                # add message to the message display
-                self.message_display.config(state=tk.NORMAL)
-                self.message_display.insert(tk.END, f"{self.username}: {msg}\n")
-                self.message_display.config(state=tk.DISABLED)
 
                 request = {
                     "action": "send_message",
@@ -528,9 +524,6 @@ class ClientGUI:
             sender = response.get("sender_username", "Unknown")
             message = response.get("message", "")
             logger.info(f"Received message from {sender}: {message}")
-            self.message_display.config(state=tk.NORMAL)
-            self.message_display.insert(tk.END, f"{sender}: {message}\n")
-            self.message_display.config(state=tk.DISABLED)
             self.num_messages += 1
 
             # update the messagelist box
