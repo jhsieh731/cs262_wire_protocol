@@ -256,10 +256,13 @@ class MessageDatabase:
             cursor = conn.cursor()
 
             # Convert search term to lowercase
-            search_term = search_term.lower()
+            search_term = search_term.lower().replace("*", "%")
+
+            if not search_term:
+                search_term = "%"  # Match all users if search term is empty
             
             # First get total count
-            count_sql = "SELECT COUNT(*) FROM users WHERE username LIKE '%' || ? || '%'"
+            count_sql = "SELECT COUNT(*) FROM users WHERE username LIKE ?"
             cursor.execute(count_sql, (search_term,))
             
             total_count = cursor.fetchone()[0]
@@ -269,7 +272,7 @@ class MessageDatabase:
             search_sql = """
                     SELECT userid, username 
                     FROM users 
-                    WHERE username LIKE '%' || ? || '%'
+                    WHERE username LIKE ?
                     ORDER BY username ASC
                     LIMIT 10 OFFSET ?
                 """
