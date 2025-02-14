@@ -58,7 +58,7 @@ class Message:
 
     def _write(self):
         """Write to the socket."""
-        logger.info("Writing to socket")
+        # logger.info("Writing to socket")
         if self._send_buffer:
             logger.info(f"Sending {self._send_buffer!r} to {self.addr}")
             try:
@@ -114,13 +114,13 @@ class Message:
     def process_events(self, mask):
         """Process selector events (step 1 of processing)"""
         if mask & selectors.EVENT_READ:
-            logger.debug("Read event received")
+            # logger.debug("Read event received")
             try:
                 self.read()
             except Exception as e:
                 logger.error(f"Error during read: {e}")
         if mask & selectors.EVENT_WRITE:
-            logger.debug("Write event received")
+            # logger.debug("Write event received")
             try:
                 self.write()
             except Exception as e:
@@ -133,12 +133,12 @@ class Message:
 
         if self._header_len is None:
             self.process_protoheader()
-            logger.info(f"Read protoheader, new data: {self._recv_buffer!r}")
+            # logger.info(f"Read protoheader, new data: {self._recv_buffer!r}")
 
         if self._header_len is not None:
             if self.header is None:
                 self.process_header()
-                logger.info(f"Read header, new data: {self._recv_buffer!r}")
+                # logger.info(f"Read header, new data: {self._recv_buffer!r}")
 
         if self.header:
             if self.response is None:
@@ -174,7 +174,6 @@ class Message:
 
     def queue_request(self):
         """Prepare a request to be sent to the server."""
-        logger.info("Queuing request")
         # Reset state before queuing a new request
         self.reset_state()
         
@@ -182,7 +181,6 @@ class Message:
         if self.protocol_mode == "json":
             content = self._json_encode(self.request["content"], "utf-8")
         elif self.protocol_mode == "custom":
-            logger.info(f"Line 166 - Request content: {self.request['content']}")
             content = self.custom_protocol.serialize(self.request["content"])
         
         # Create the message
@@ -192,7 +190,7 @@ class Message:
             "action": action,
             "content_length": len(content),
         }
-        logger.info(f"Request: {req!r}")
+        logger.info(f"Queing request: {req!r}")
         message = self._create_message(**req)
         self._send_buffer += message
         self._request_queued = True
@@ -220,11 +218,11 @@ class Message:
             
         # Then process header length
         if len(self._recv_buffer) >= hdrlen:
-            logger.info(f"len of buffer: {len(self._recv_buffer)}")
+            # logger.info(f"len of buffer: {len(self._recv_buffer)}")
             self._header_len = struct.unpack(
                 ">H", self._recv_buffer[:hdrlen]
             )[0]
-            logger.info(f"header length: {self._header_len}")
+            # logger.info(f"header length: {self._header_len}")
             self._recv_buffer = self._recv_buffer[hdrlen:]
 
     def process_header(self):
@@ -255,7 +253,7 @@ class Message:
 
     def reset_state(self):
         """Reset the message state to handle new requests/responses"""
-        logger.info("Resetting message state")
+        # logger.info("Resetting message state")
         self._header_len = None
         self.header = None
         self.response = None
@@ -264,12 +262,12 @@ class Message:
     def process_response(self):
         """Process the response (read pipeline step 3)."""
         content_len = self.header["content-length"]
-        logger.info(f"len of buffer: {len(self._recv_buffer)}; Content length: {content_len}")
+        # logger.info(f"len of buffer: {len(self._recv_buffer)}; Content length: {content_len}")
         # Check if the full response is in the buffer
         if not len(self._recv_buffer) >= content_len:
             return
         data = self._recv_buffer[:content_len]
-        logger.info(f"Response content: {data!r}")
+        # logger.info(f"Response content: {data!r}")
         self._recv_buffer = self._recv_buffer[content_len:]
         action = self.header["action"]
         

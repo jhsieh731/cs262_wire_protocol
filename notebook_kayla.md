@@ -118,3 +118,9 @@ There should be two existing users, "existing_user_1" and "existing_user_2", in 
 6. Client 2: Delete account
 7. Client 3: Create account as user_3
 8. Client 1: Send message to user_3
+
+## Revision
+- Do wildcard account search
+- Broadcast delete messages
+- Broadcast delete account
+- Load private chat

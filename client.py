@@ -25,15 +25,22 @@ def initialize_client(server_host, server_port, input_protocol):
 
 # Send message to the server
 def send_to_server(request):
-     for key in list(sel.get_map().values()):
-        msg_obj = key.data  # This is the Message instance
+    if sel is None:
+        logger.error("Client not initialized. Call initialize_client first.")
+        return
         
-        # Set the request and queue it
-        msg_obj.request = request
-        msg_obj.queue_request()          # Queue the message for sending
-        
-        # # Set selector to listen for write events
-        msg_obj._set_selector_events_mask("w")
+    try:
+        for key in list(sel.get_map().values()):
+            msg_obj = key.data  # This is the Message instance
+            
+            # Set the request and queue it
+            msg_obj.request = request
+            msg_obj.queue_request()          # Queue the message for sending
+            
+            # # Set selector to listen for write events
+            msg_obj._set_selector_events_mask("w")
+    except Exception as e:
+        logger.error(f"Error sending to server: {e}")
 
 # Thread for handling server communication
 def network_thread(request):

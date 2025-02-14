@@ -150,6 +150,58 @@ class MessageDatabase:
             if conn:
                 conn.close()
                 
+    def load_private_chat(self, current_uuid: int, other_username: str) -> List[dict]:
+        """Load all messages between current user and other user.
+        
+        Args:
+            current_uuid: UUID of the current user
+            other_username: Username of the other user
+            
+        Returns:
+            List of messages with sender, recipient, and message content
+        """
+        try:
+            conn = self.connect()
+            if not conn:
+                return []
+                
+            cursor = conn.cursor()
+            
+            # First get the UUID of the other user
+            cursor.execute("""
+                SELECT userid FROM users WHERE username = ?
+            """, (other_username,))
+            result = cursor.fetchone()
+            if not result:
+                return []
+                
+            other_uuid = result[0]
+            
+            # Get all messages between these users
+            cursor.execute("""
+                SELECT m.message, m.timestamp, s.username as sender_username, r.username as recipient_username, status
+                FROM messages m
+                JOIN users s ON m.senderuuid = s.userid
+                JOIN users r ON m.recipientuuid = r.userid
+                WHERE (m.senderuuid = ? AND m.recipientuuid = ?)
+                   OR (m.senderuuid = ? AND m.recipientuuid = ?)
+                ORDER BY m.timestamp ASC
+            """, (current_uuid, other_uuid, other_uuid, current_uuid))
+            
+            messages = [{
+                "message": row[0],
+                "timestamp": row[1],
+                "sender_username": row[2],
+                "recipient_username": row[3],
+                "status": row[4]
+            } for row in cursor.fetchall()]
+            
+            return messages
+            
+        except sqlite3.Error as e:
+            logger.error(f"Error loading private chat: {e}")
+            return []
+            
     def get_user_uuid(self, username: str) -> tuple[bool, str, str]:
         """
         Get a user's UUID by their username.
@@ -563,9 +615,7 @@ class MessageDatabase:
 
             # update status to delivered for these messages
             msg_ids = [msg["msgid"] for msg in messages]
-            # cursor.execute("UPDATE messages SET status = 'delivered' WHERE msgid IN ({})".format(",".join("?" * len(msg_ids))), msg_ids)
-            current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            cursor.execute("UPDATE messages SET status = 'delivered', timestamp = ? WHERE msgid IN ({})".format(",".join("?" * len(msg_ids))), [current_time] + msg_ids)
+            cursor.execute("UPDATE messages SET status = 'delivered' WHERE msgid IN ({})".format(",".join("?" * len(msg_ids))), msg_ids)
             conn.commit()
             return [dict(message) for message in messages]
 

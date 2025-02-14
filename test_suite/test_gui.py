@@ -23,7 +23,7 @@ class TestClientGUI(unittest.TestCase):
     def test_init(self):
         """Test initialization of GUI"""
         self.assertIsNone(self.gui.user_uuid)
-        self.assertIsNone(self.gui.selected_accounts)
+        self.assertIsNone(self.gui.selected_account)
         self.assertEqual(self.gui.username, "")
         self.assertEqual(self.gui.current_page, 0)
         self.assertEqual(self.gui.max_accounts_page, 0)
@@ -117,7 +117,7 @@ class TestClientGUI(unittest.TestCase):
         self.gui.update_message_input_area()
         self.gui.message_display.config(state=tk.NORMAL)
         content = self.gui.message_display.get("1.0", tk.END).strip()
-        self.assertEqual(content, f"Send message to testuser")
+        self.assertEqual(content, f"Your chat with testuser")
 
     def test_update_accounts_list(self):
         """Test updating accounts list"""

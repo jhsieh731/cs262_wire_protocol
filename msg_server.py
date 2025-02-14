@@ -437,6 +437,16 @@ class Message:
                 "error": error_message,
             }
             action = "delete_account_r"
+            
+        elif self.header["action"] == "load_private_chat":
+            current_uuid = request_content.get("current_uuid")
+            other_username = request_content.get("other_username")
+            
+            messages = db.load_private_chat(current_uuid, other_username)
+            response_content = {
+                "messages": messages
+            }
+            action = "load_private_chat_r"
         elif self.header["action"] == "error":
             response_content = {
                 "error": f"An error occurred. Please try again."

@@ -23,6 +23,8 @@ class CustomProtocol:
             "username",
             "uuid",
             "deleter_uuid",
+            "current_uuid",
+            "other_username",
         ]
 
         # defines order in which fields appear after listifying request types (alphabetical)
@@ -53,6 +55,8 @@ class CustomProtocol:
             "check_username_r": ["message"],
             "register_r": ["uuid"],
             "delete_account_refresh_r": ["error", "success", "total_count"],
+            "load_private_chat_r": ["messages"],
+            "load_private_chat": ["current_uuid", "other_username"]
         }
 
 
