@@ -84,20 +84,26 @@ def start_connection(gui, request):
     sel.register(sock, events, data=message)
 
 
-if __name__ == '__main__':
+def main():
     if len(sys.argv) != 4:
         logger.info(f"Usage: {sys.argv[0]} <host> <port> <protocol>")
         sys.exit(1)
+    
+    server_host = sys.argv[1]
+    input_protocol = sys.argv[3]
+    server_port = None
+    
     try:
-        server_host = sys.argv[1]
         server_port = int(sys.argv[2])
-        input_protocol = sys.argv[3]
     except ValueError:
         logger.info(f"Error: Port must be a number")
         sys.exit(1)
     
     # Initialize client
-    initialize_client(server_host, server_port, input_protocol)
-    
-    # Run the Tkinter main loop
-    root.mainloop()
+    if server_port is not None:
+        initialize_client(server_host, server_port, input_protocol)
+        # Run the Tkinter main loop
+        root.mainloop()
+
+if __name__ == '__main__':
+    main()
