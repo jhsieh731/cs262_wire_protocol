@@ -52,6 +52,7 @@ class CustomProtocol:
             "refresh_accounts_r": ["message"],
             "check_username_r": ["message"],
             "register_r": ["uuid"],
+            "delete_account_refresh_r": ["error", "success", "total_count"],
         }
 
 

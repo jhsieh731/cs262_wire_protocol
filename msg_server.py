@@ -400,25 +400,36 @@ class Message:
             success = False
             error_message = ""
             if stored_password == password:
-                # Password matches, delete the account
+                logger.info("Passwords match")
                 if db.delete_user(user_uuid):
+                    logger.info("User deleted")
                     success = True
-                    # Notify all other clients to refresh their account lists
-                    response_content = {}
-                    if self.protocol_mode == "json":
-                        response_content_bytes = self._json_encode(response_content, "utf-8")
-                    else:
-                        response_content_bytes = self.custom_protocol.serialize(response_content)
+                    # First delete all messages and notify affected users
+                    message_counts = db.delete_user_messages(user_uuid)
                     
-                    refresh_message = self._create_message(
-                        content_bytes=response_content_bytes,
-                        action="refresh_accounts_r",
-                        content_length=len(response_content_bytes)
-                    )
-                    
-                    self.broadcast(refresh_message)
+                    # Notify each affected user about their deleted messages
+                    for affected_uuid, num_deleted in message_counts:
+                        if affected_uuid != user_uuid:  # Don't notify the user being deleted
+                            recipient_socket = db.get_associated_socket(affected_uuid)
+                            if recipient_socket:
+                                notify_content = {"total_count": num_deleted,
+                                                 "success": success,
+                                                 "error": error_message}
+                                
+                                if self.protocol_mode == "json":
+                                    notify_content_bytes = self._json_encode(notify_content, "utf-8")
+                                else:
+                                    notify_content_bytes = self.custom_protocol.serialize(notify_content)
+                                    
+                                notify_message = self._create_message(
+                                    content_bytes=notify_content_bytes,
+                                    action="delete_account_refresh_r",
+                                    content_length=len(notify_content_bytes)
+                                )
+                                self._unicast(recipient_socket, notify_message)
                 else:
                     error_message = "Failed to delete account"
+    
             else:
                 error_message = "Incorrect password"
             response_content = {

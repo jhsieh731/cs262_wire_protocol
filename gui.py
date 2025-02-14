@@ -344,9 +344,19 @@ class ClientGUI:
     # ===================================================================
     # ===================================================================
 
-    def thread_send(self, request):
-        """Send a request to the server using a separate thread to reduce GUI lag."""
-        thread = threading.Thread(target=self.send_to_server, args=(request,))
+    def thread_send(self, request, callback=None):
+        """Send a request to the server using a separate thread to reduce GUI lag.
+        
+        Args:
+            request: The request to send to the server
+            callback: Optional function to call after the request is processed
+        """
+        def send_with_callback():
+            self.send_to_server(request)
+            if callback:
+                self.master.after(100, callback)  # Schedule callback on main thread after 100ms
+                
+        thread = threading.Thread(target=send_with_callback)
         thread.start()
 
     def check_username(self): 
@@ -383,6 +393,7 @@ class ClientGUI:
         self.thread_send(request)
 
     def search_accounts(self):
+        logger.info("Searching accounts")
         search_term = self.search_bar.get().lower()
         request = {
             "action": "search_accounts",
@@ -576,7 +587,6 @@ class ClientGUI:
                 # disable it
                 self.register_username_entry.config(state=tk.DISABLED)
 
-
         elif response_type == "register_r":
             if response.get("error", None):
                 self.create_error_page(response.get("error", "An error occurred"))
@@ -584,8 +594,19 @@ class ClientGUI:
                 self.username = self.register_username_entry.get()
                 self.user_uuid = response.get("uuid", None)
                 self.create_chat_page()
+                logger.info(f"Registered user: {self.username} with UUID: {self.user_uuid} and refreshing search_accounts")
+                # Create chat page first, then search accounts after a delay
+                self.master.after(500, self.search_accounts)
 
-        
+        elif response_type == "delete_account_refresh_r":
+            if response["success"]:
+                num_deleted = response.get("total_count", 0)
+                self.num_messages -= num_deleted
+                self.load_messages()
+                logger.info("Loaded messages after deleting account")
+                # Search accounts after messages are loaded
+                self.master.after(500, self.search_accounts)
+
         elif response_type == "error": # Handle error response
             logger.error(f"Error: {response.get('error', 'An error occurred')}")
             messagebox.showerror("Error", response.get("error", "An error occurred"), icon="warning")

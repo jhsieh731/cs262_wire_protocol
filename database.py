@@ -310,6 +310,53 @@ class MessageDatabase:
             if conn:
                 conn.close()
 
+    def delete_user_messages(self, uuid: int) -> List[Tuple[int, int]]:
+        """Delete all messages associated with a user and return a list of (uuid, num_deleted) tuples.
+        
+        Args:
+            uuid: The UUID of the user whose messages to delete
+            
+        Returns:
+            List of tuples containing (uuid, num_deleted) for each affected user
+        """
+        try:
+            conn = self.connect()
+            if not conn:
+                return []
+                
+            cursor = conn.cursor()
+            
+            # First get all messages where user is sender or recipient
+            cursor.execute("""
+                SELECT senderuuid, recipientuuid FROM messages 
+                WHERE senderuuid = ? OR recipientuuid = ?
+            """, (uuid, uuid))
+            
+            # Track message counts per user
+            user_counts = {}
+            for sender_uuid, recipient_uuid in cursor.fetchall():
+                if sender_uuid not in user_counts:
+                    user_counts[sender_uuid] = 1
+                if recipient_uuid not in user_counts:
+                    user_counts[recipient_uuid] = 1
+                user_counts[sender_uuid] += 1
+                user_counts[recipient_uuid] += 1
+            
+            # Delete all messages
+            cursor.execute("""
+                DELETE FROM messages 
+                WHERE senderuuid = ? OR recipientuuid = ?
+            """, (uuid, uuid))
+            
+            conn.commit()
+            
+            # Convert counts to list of tuples
+            return [(uuid, count) for uuid, count in user_counts.items()]
+            
+        except sqlite3.Error as e:
+            logger.error(f"Error deleting user messages: {e}")
+            return []
+            
     def delete_user(self, uuid: int) -> bool:
         """
         Delete a user by their UUID.
