@@ -16,9 +16,15 @@ class TestClientGUI(unittest.TestCase):
             self.gui = ClientGUI(self.root, self.send_to_server, self.network_thread)
         
     def tearDown(self):
-        if hasattr(self.gui, 'dialog') and self.gui.dialog:
-            self.gui.dialog.destroy()
-        self.root.destroy()
+        try:
+            if hasattr(self.gui, 'dialog') and self.gui.dialog:
+                self.gui.dialog.destroy()
+        except tk.TclError:
+            pass
+        try:
+            self.root.destroy()
+        except tk.TclError:
+            pass
         
     def test_init(self):
         """Test initialization of GUI"""
@@ -230,9 +236,13 @@ class TestClientGUI(unittest.TestCase):
         self.gui.create_confirm_delete_account_page()
         self.root.update()
         response = {"success": True}
-        with patch('tkinter.messagebox.showerror') as mock_error:
+        with patch('tkinter.messagebox.showerror') as mock_error, \
+             patch('tkinter.messagebox.showinfo') as mock_info:
             self.gui.handle_server_response(response, "delete_account_r")
             mock_error.assert_not_called()
+            mock_info.assert_called_once_with("Account deleted", "Your account was successfully deleted")
+            # After successful deletion, dialog should be None
+            self.assertIsNone(self.gui.dialog)
 
     def test_handle_server_response_login_register_r(self):
         """Test handling server login response"""

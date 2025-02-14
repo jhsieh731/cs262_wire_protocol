@@ -510,6 +510,7 @@ class ClientGUI:
         if response_type == "delete_account_r":
             if response["success"]:
                 self.dialog.destroy()
+                self.dialog = None
                 messagebox.showinfo("Account deleted", "Your account was successfully deleted")
                 
                 # Only quit if we're not in a test environment
