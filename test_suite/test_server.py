@@ -3,6 +3,7 @@ from unittest.mock import Mock, patch, MagicMock
 import socket
 import selectors
 import sys
+import json
 import server
 from msg_server import Message
 
@@ -64,6 +65,23 @@ class TestServer(unittest.TestCase):
         
         # Check return value
         self.assertEqual(lsock, self.mock_socket)
+        
+    def test_server_initialization_bind_error(self):
+        """Test server initialization with bind error."""
+        self.mock_socket.bind.side_effect = OSError("Address already in use")
+        
+        with self.assertRaises(SystemExit) as cm:
+            server.initialize_server('localhost', 65432)
+        self.assertEqual(cm.exception.code, 1)
+        self.mock_socket.close.assert_called_once()
+        
+    def test_server_initialization_general_error(self):
+        """Test server initialization with general error."""
+        self.mock_socket.bind.side_effect = Exception("Unknown error")
+        
+        with self.assertRaises(SystemExit) as cm:
+            server.initialize_server('localhost', 65432)
+        self.assertEqual(cm.exception.code, 1)
     
     def test_accept_wrapper(self):
         """Test accepting new connections."""
@@ -91,13 +109,58 @@ class TestServer(unittest.TestCase):
         mock_key = Mock()
         mock_key.data = None
         mock_key.fileobj = self.mock_socket
-        self.mock_selector.select.return_value = [(mock_key, selectors.EVENT_READ)]
         
         # Run server until KeyboardInterrupt
         self.mock_selector.select.side_effect = [[(mock_key, selectors.EVENT_READ)], KeyboardInterrupt()]
         
         # Run the server
         server.run_server(accepted_versions=[1], protocol="custom")
+        
+    def test_run_server_existing_connection(self):
+        """Test run_server handling of existing connections"""
+        # Mock an existing connection event
+        mock_message = Mock()
+        mock_key = Mock()
+        mock_key.data = mock_message
+        mock_key.fileobj = self.mock_socket
+        
+        # Run server until KeyboardInterrupt
+        self.mock_selector.select.side_effect = [[(mock_key, selectors.EVENT_READ)], KeyboardInterrupt()]
+        
+        # Run the server
+        server.run_server(accepted_versions=[1], protocol="custom")
+        
+        # Verify message processing
+        mock_message.process_events.assert_called_once()
+        
+    def test_run_server_connection_error(self):
+        """Test run_server handling of connection errors"""
+        # Mock an existing connection with error
+        mock_message = Mock()
+        mock_message.process_events.side_effect = Exception("Connection error")
+        mock_key = Mock()
+        mock_key.data = mock_message
+        mock_key.fileobj = self.mock_socket
+        
+        # Run server until KeyboardInterrupt
+        self.mock_selector.select.side_effect = [[(mock_key, selectors.EVENT_READ)], KeyboardInterrupt()]
+        
+        # Run the server
+        server.run_server(accepted_versions=[1], protocol="custom")
+        
+        # Verify error handling
+        mock_message.close.assert_called_once()
+        
+    def test_run_server_general_error(self):
+        """Test run_server handling of general errors"""
+        # Mock a general error
+        self.mock_selector.select.side_effect = Exception("Unknown error")
+        
+        # Run the server
+        server.run_server(accepted_versions=[1], protocol="custom")
+        
+        # Verify cleanup
+        self.mock_selector.close.assert_called_once()
         
         # Verify cleanup was performed
         self.mock_selector.close.assert_called_once()
@@ -147,6 +210,45 @@ class TestServer(unittest.TestCase):
         mock_message.process_events.assert_called_once_with(selectors.EVENT_READ)
         mock_message.close.assert_called_once()
         self.mock_selector.close.assert_called_once()
+
+    def test_main_with_invalid_port(self):
+        """Test main script with invalid port number"""
+        with patch('json.load') as mock_load:
+            mock_load.return_value = {
+                'host': 'localhost',
+                'port': 80,  # privileged port
+                'protocol': 'custom',
+                'accepted_versions': [1]
+            }
+            with patch('builtins.print') as mock_print:
+                with self.assertRaises(SystemExit) as cm:
+                    server.main()
+                self.assertEqual(cm.exception.code, 1)
+                mock_print.assert_called_once_with("Error: Please use a port number >= 1024")
+                
+    def test_main_with_config_error(self):
+        """Test main script with config file error"""
+        with patch('json.load') as mock_load:
+            mock_load.side_effect = json.JSONDecodeError("Invalid JSON", "", 0)
+            with self.assertRaises(SystemExit) as cm:
+                server.main()
+            self.assertEqual(cm.exception.code, 1)
+            
+    def test_main_with_value_error(self):
+        """Test main script with invalid port format"""
+        with patch('json.load') as mock_load:
+            mock_load.return_value = {
+                'host': 'localhost',
+                'port': 'invalid',  # invalid port format
+                'protocol': 'custom',
+                'accepted_versions': [1]
+            }
+            with patch('builtins.print') as mock_print:
+                with self.assertRaises(SystemExit) as cm:
+                    server.main()
+                self.assertEqual(cm.exception.code, 1)
+                mock_print.assert_called_once_with("Error: Port must be a number")
+
 
 if __name__ == '__main__':
     unittest.main()
