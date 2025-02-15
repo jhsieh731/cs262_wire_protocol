@@ -1,7 +1,6 @@
 import sys
 import socket
 import selectors
-import logging
 from msg_server import Message
 import json
 from logger import set_logger

@@ -1,7 +1,5 @@
 import sqlite3
 from typing import List, Tuple, Optional
-import os
-from datetime import datetime
 from logger import set_logger
 
 logger = set_logger("db", "db.log")

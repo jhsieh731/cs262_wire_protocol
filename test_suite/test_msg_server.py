@@ -4,7 +4,7 @@ import socket
 import json
 import struct
 from unittest.mock import Mock, patch, MagicMock
-from msg_server import Message, MessageDatabase, CustomProtocol
+from msg_server import Message, CustomProtocol
 
 # to run: python3 -m unittest test_suite/test_msg_server.py -v
 
