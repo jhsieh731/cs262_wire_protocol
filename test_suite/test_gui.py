@@ -2,7 +2,6 @@ import unittest
 from unittest.mock import MagicMock, patch
 import tkinter as tk
 import hashlib
-import datetime
 from gui import ClientGUI
 
 # to run: python3 -m unittest test_suite/test_gui.py -v

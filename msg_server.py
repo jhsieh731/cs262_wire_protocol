@@ -2,8 +2,6 @@ import io
 import json
 import selectors
 import struct
-import sys
-from datetime import datetime
 from database import MessageDatabase
 from custom_protocol_2 import CustomProtocol
 from logger import set_logger

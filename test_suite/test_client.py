@@ -1,13 +1,9 @@
 import unittest
-from unittest.mock import Mock, MagicMock, patch
-import socket
+from unittest.mock import MagicMock, patch
 import selectors
 import sys
 import tkinter as tk
-import threading
-import datetime
 import client
-from msg_client import Message
 
 # to run: python3 -m pytest test_suite/test_client.py -v --cov=client --cov-report=term-missing
 

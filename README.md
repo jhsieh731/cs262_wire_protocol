@@ -10,6 +10,45 @@ This document provides detailed information on the client-side implementation of
 - Secure password handling using SHA-256 hashing, ensuring user data integrity and protection.
 - Integration with a database for managing user accounts, messages, and authentication.
 
+## Installation
+
+1. Clone this repository
+2. Create a Python virtual environment (recommended):
+   ```bash
+   python -m venv venv
+   source venv/bin/activate  # On Windows use: venv\Scripts\activate
+   ```
+3. Install the required dependencies:
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+The application requires the following Python packages:
+- pytest (>=7.0.0) - For running tests
+- coverage (>=7.0.0) - For test coverage reporting
+- black (>=23.0.0) - For code formatting
+- pylint (>=2.17.0) - For code linting
+- selectors3 (>=0.3.0) - For handling multiple socket connections
+- structlog (>=24.1.0) - For structured logging
+
+## Running the Application
+
+0. Ensure the protocol mode is correct in config.json.
+
+1. Start the server:
+
+   ```bash
+   python server.py
+   ```
+
+2. Start the client:
+
+   ```bash
+   python client.py <host> <port> <protocol>
+   ```
+
+   Where `<host>` is the server's address (look at config file) and `<port>` is the server's port number (look at config file). `<protocol>` should be either "custom" or "json".
+
 ## Networking Setup
 
 - `initialize_client(server_host, server_port, input_protocol)`: Initializes the client by setting up a selector for handling network events and establishing communication parameters.
@@ -133,24 +172,6 @@ The application requires Python 3.6 or higher and uses the following standard li
 - `datetime`: For timestamp management
 
 For development and testing, these should all be included natively in the official Python (default Mac version is not sufficient).
-
-## Running the Application
-
-0. Ensure the protocol mode is correct in config.json.
-
-1. Start the server:
-
-   ```bash
-   python server.py
-   ```
-
-2. Start the client:
-
-   ```bash
-   python client.py <host> <port> <protocol>
-   ```
-
-   Where `<host>` is the server's address (look at config file) and `<port>` is the server's port number (look at config file). `<protocol>` should be either "custom" or "json".
 
 ## Notes
 

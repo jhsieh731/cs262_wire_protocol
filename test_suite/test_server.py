@@ -1,6 +1,5 @@
 import unittest
 from unittest.mock import Mock, patch, MagicMock
-import socket
 import selectors
 import sys
 import json
