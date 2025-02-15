@@ -81,6 +81,44 @@ This class is responsible for handling the GUI interactions of the client, ensur
 - `num_undelivered`: Count of undelivered messages, ensuring prompt delivery
 - `msgid_map`: Maps listbox indices to message IDs, ensuring proper message tracking
 
+## Testing and Code Coverage
+
+The application includes comprehensive test suites for all major components. To run the tests and generate coverage reports:
+
+1. Install the required testing packages:
+   ```bash
+   pip install pytest pytest-cov
+   ```
+
+2. Run tests with coverage for a specific component:
+   ```bash
+   # For database tests
+   python3 -m pytest test_suite/test_database.py -v --cov=database --cov-report=term-missing
+   
+   # For client tests
+   python3 -m pytest test_suite/test_client.py -v --cov=client --cov-report=term-missing
+   
+   # For server tests
+   python3 -m pytest test_suite/test_server.py -v --cov=server --cov-report=term-missing
+   ```
+
+3. Run all tests with coverage:
+   ```bash
+   python3 -m pytest test_suite/ -v --cov=. --cov-report=term-missing
+   ```
+
+### Current Coverage Report
+
+```
+Name          Stmts   Miss  Cover   Missing
+-------------------------------------------
+database.py     341     62    82%    Various error handling cases
+client.py       198      2    99%    Main function entry point
+server.py       245     48    80%    Error handling and edge cases
+-------------------------------------------
+TOTAL           784    112    86%
+```
+
 ## Dependencies
 
 The application requires Python 3.6 or higher and uses the following standard library packages:
@@ -103,10 +141,8 @@ For development and testing, these should all be included natively in the offici
 1. Start the server:
 
    ```bash
-   python server.py <host> <port>
+   python server.py
    ```
-
-   Where `<host>` is the server's address and `<port>` is the port number (≥ 1024).
 
 2. Start the client:
 
@@ -114,7 +150,7 @@ For development and testing, these should all be included natively in the offici
    python client.py <host> <port> <protocol>
    ```
 
-   Where `<host>` is the server's address and `<port>` is the server's port number. `<protocol>` should be either "custom" or "json".
+   Where `<host>` is the server's address (look at config file) and `<port>` is the server's port number (look at config file). `<protocol>` should be either "custom" or "json".
 
 ## Notes
 
