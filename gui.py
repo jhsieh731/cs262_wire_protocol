@@ -14,9 +14,9 @@ class ClientGUI:
         self.master.title("Client Application")
         self.send_to_server = send_to_server
         self.network_thread = network_thread
-
+        
         self.user_uuid = None
-        self.selected_accounts = None
+        self.selected_account = None
         self.username = ""
         self.current_page = 0
         self.max_accounts_page = 0
@@ -305,9 +305,25 @@ class ClientGUI:
 
 
     def update_message_input_area(self):
+        logger.info(f"F {self.username}: Updating message input area")
         self.message_display.config(state=tk.NORMAL)
         self.message_display.delete(1.0, tk.END)
-        self.message_display.insert(tk.END, f"Send message to {self.selected_account}\n")
+        
+        if not self.selected_account:
+            self.message_display.config(state=tk.DISABLED)
+            return
+
+        self.message_display.insert(tk.END, f"Your chat with {self.selected_account}\n\n\n")
+        
+        # Request chat history
+        request = {
+            "action": "load_private_chat",
+            "content": {
+                "current_uuid": self.user_uuid,
+                "other_username": self.selected_account
+            }
+        }
+        self.thread_send(request)
         self.message_display.config(state=tk.DISABLED)
 
     def update_accounts_list(self, accounts):
@@ -344,12 +360,23 @@ class ClientGUI:
     # ===================================================================
     # ===================================================================
 
-    def thread_send(self, request):
-        """Send a request to the server using a separate thread to reduce GUI lag."""
-        thread = threading.Thread(target=self.send_to_server, args=(request,))
+    def thread_send(self, request, callback=None):
+        """Send a request to the server using a separate thread to reduce GUI lag.
+        
+        Args:
+            request: The request to send to the server
+            callback: Optional function to call after the request is processed
+        """
+        def send_with_callback():
+            self.send_to_server(request)
+            if callback:
+                self.master.after(100, callback)  # Schedule callback on main thread after 100ms
+                
+        thread = threading.Thread(target=send_with_callback)
         thread.start()
 
     def check_username(self): 
+        logger.info(f"F {self.username}: Check username")
         username = self.username_entry.get()
         if not username:
             return
@@ -366,6 +393,7 @@ class ClientGUI:
         self.thread_send(request)
 
     def register(self):
+        logger.info(f"F {self.username}: Register")
         username = self.register_username_entry.get()
         password = self.register_password_entry.get()
         if username and password:
@@ -376,6 +404,7 @@ class ClientGUI:
             self.thread_send(request)
 
     def load_page_data(self):
+        logger.info(f"F {self.username}: Load page data")
         request = {
             "action": "load_page_data",
             "content": {"uuid": self.user_uuid},
@@ -383,6 +412,7 @@ class ClientGUI:
         self.thread_send(request)
 
     def search_accounts(self):
+        logger.info(f"F {self.username}: Searching accounts")
         search_term = self.search_bar.get().lower()
         request = {
             "action": "search_accounts",
@@ -391,15 +421,17 @@ class ClientGUI:
         self.thread_send(request)
 
     def delete_messages(self):
+        logger.info(f"F {self.username}: Delete messages")
         selected_indices = self.messages_listbox.curselection()
         selected_msgids = [self.msgid_map[i] for i in selected_indices if i in self.msgid_map]
         request = {
             "action": "delete_messages",
-            "content": {"msgids": selected_msgids},
+            "content": {"msgids": selected_msgids, "deleter_uuid": self.user_uuid},
         }
         self.thread_send(request)
 
     def load_undelivered_messages(self):
+        logger.info(f"F {self.username}: Load undelivered messages")
         num_messages = int(self.num_messages_entry.get())
         if num_messages < 1 or num_messages > int(self.num_undelivered):
             tk.messagebox.showwarning("Invalid Input", f"Please enter a number between 1 and {self.num_undelivered} (your current number of undelivered messages).")
@@ -412,6 +444,7 @@ class ClientGUI:
 
 
     def load_messages(self):
+        logger.info(f"F {self.username}: Load messages")
         num_messages = self.num_messages
         logger.info(f"Loading {num_messages} messages")
         request = {
@@ -422,22 +455,21 @@ class ClientGUI:
 
 
     def send_message(self):
-            msg = self.entry.get()
-            if msg and self.selected_account:
-                logger.info(f"Selected account: {self.selected_account}, Message: {msg}")
-                self.entry.delete(0, tk.END)
-                # add message to the message display
-                self.message_display.config(state=tk.NORMAL)
-                self.message_display.insert(tk.END, f"{self.username}: {msg}\n")
-                self.message_display.config(state=tk.DISABLED)
+        logger.info(f"F {self.username}: Send message")
+        msg = self.entry.get()
+        if msg and self.selected_account:
+            logger.info(f"Selected account: {self.selected_account}, Message: {msg}")
+            self.entry.delete(0, tk.END)
+            timestamp = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
-                request = {
-                    "action": "send_message",
-                    "content": {"uuid": self.user_uuid, "recipient_username": self.selected_account, "message": msg, "timestamp": datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')},
-                }
-                self.thread_send(request)
+            request = {
+                "action": "send_message",
+                "content": {"uuid": self.user_uuid, "recipient_username": self.selected_account, "message": msg, "timestamp": timestamp},
+            }
+            self.thread_send(request)
 
     def login(self):
+        logger.info(f"F {self.username}: Login")
         username = self.username_entry.get()
         password = self.password_entry.get()
         if username and password:
@@ -454,6 +486,7 @@ class ClientGUI:
 
 
     def delete_account(self):
+        logger.info(f"F {self.username}: Delete account")
         password = self.dialog_password_entry.get()
         request = {
             "action": "delete_account",
@@ -477,7 +510,14 @@ class ClientGUI:
         if response_type == "delete_account_r":
             if response["success"]:
                 self.dialog.destroy()
-                self.create_login_page()
+                self.dialog = None
+                messagebox.showinfo("Account deleted", "Your account was successfully deleted")
+                
+                # Only quit if we're not in a test environment
+                import sys
+                if not any('unittest' in arg for arg in sys.argv):
+                    self.master.quit()
+                    self.master.destroy()
             else:
                 messagebox.showerror("Error", response["error"])
 
@@ -487,6 +527,7 @@ class ClientGUI:
 
         elif response_type == "load_page_data_r":
             accounts = response.get("accounts", [])
+            accounts = [acc for acc in accounts if acc[1] != self.username]
             messages = response.get("messages", [])
             total_undelivered = response.get("num_pending", 0)
             total_count = response.get("total_count", 0)
@@ -512,7 +553,9 @@ class ClientGUI:
         elif response_type == "search_accounts_r":
             accounts = response.get("accounts", [])
             total_count = response.get("total_count", 0)
-            logger.info(f"Received {len(accounts)} accounts (total: {total_count})")
+            logger.info(f"Received {len(accounts)} accounts (total: {total_count}) accounts: {accounts}")
+            accounts = [acc for acc in accounts if acc[1] != self.username]
+            logger.info(f"Accounts without self: {accounts}")
             
             # Update the accounts list
             self.update_accounts_list(accounts)
@@ -527,14 +570,13 @@ class ClientGUI:
         elif response_type == "receive_message_r":            
             sender = response.get("sender_username", "Unknown")
             message = response.get("message", "")
-            logger.info(f"Received message from {sender}: {message}")
-            self.message_display.config(state=tk.NORMAL)
-            self.message_display.insert(tk.END, f"{sender}: {message}\n")
-            self.message_display.config(state=tk.DISABLED)
+            logger.info(f"{self.username} received message from {sender}: {message}")
             self.num_messages += 1
 
             # update the messagelist box
-            self.load_messages()
+            self.master.after(500, self.load_messages())
+            if sender == self.selected_account:
+                self.master.after(1000, self.update_message_input_area)
         
         elif response_type == "send_message_r":
             logger.info(f"send message status: {response.get('status', 'error')}")
@@ -543,12 +585,14 @@ class ClientGUI:
                 logger.info("Message sent successfully")
                 self.num_messages += 1
                 self.load_messages()
+                self.master.after(500, self.update_message_input_area)
 
         elif response_type == "delete_messages_r":
             logger.info("Messages deleted successfully")
             num_deleted = response.get("total_count", 0)
             self.num_messages -= num_deleted
             self.load_messages()
+            self.master.after(500, self.update_message_input_area)
         
         elif response_type == "load_messages_r":
             messages = response.get("messages", [])
@@ -564,6 +608,7 @@ class ClientGUI:
             self.num_messages += len(messages)
             logger.info(f"Received {len(messages)} undelivered messages")
             self.load_messages()
+            self.master.after(500, self.update_message_input_area)
 
         elif response_type == "login_error":
             logger.error(f"Error: {response.get('message', 'An error occurred')}")
@@ -583,7 +628,6 @@ class ClientGUI:
                 # disable it
                 self.register_username_entry.config(state=tk.DISABLED)
 
-
         elif response_type == "register_r":
             if response.get("error", None):
                 self.create_error_page(response.get("error", "An error occurred"))
@@ -591,8 +635,45 @@ class ClientGUI:
                 self.username = self.register_username_entry.get()
                 self.user_uuid = response.get("uuid", None)
                 self.create_chat_page()
+                logger.info(f"Registered user: {self.username} with UUID: {self.user_uuid} and refreshing search_accounts")
+                # Create chat page first, then search accounts after a delay
+                self.master.after(500, self.search_accounts)
 
-        
+        elif response_type == "delete_account_refresh_r":
+            if response["success"]:
+                self.selected_account = None
+                num_deleted = response.get("total_count", 0)
+                self.num_messages -= num_deleted
+                self.load_messages()
+                logger.info("Loaded messages after deleting account")
+                # Search accounts after messages are loaded
+                self.master.after(500, self.search_accounts)
+                self.master.after(500, self.update_message_input_area)
+
+        elif response_type == "load_private_chat_r":
+            messages = response.get("messages", [])
+            self.message_display.config(state=tk.NORMAL)
+            
+            # Clear everything after the header
+            header_end = "3.0"  # After "Your chat with username\n\n\n"
+            self.message_display.delete(header_end, tk.END)
+            
+            # Display messages
+            for msg in messages:
+                if msg["status"] == "pending" and msg["recipient_username"] == self.username:
+                    logger.info(f"Skipping pending message from {msg['sender_username']}: {msg['message']}")
+                    continue
+                timestamp = msg["timestamp"]
+                sender = msg["sender_username"]
+                message = msg["message"]
+                
+                # Format: [timestamp] sender: message
+                self.message_display.insert(tk.END, f"[{timestamp}] {sender}: {message}\n")
+            
+            self.message_display.config(state=tk.DISABLED)
+            # Scroll to bottom
+            self.message_display.see(tk.END)
+            
         elif response_type == "error": # Handle error response
             logger.error(f"Error: {response.get('error', 'An error occurred')}")
             messagebox.showerror("Error", response.get("error", "An error occurred"), icon="warning")

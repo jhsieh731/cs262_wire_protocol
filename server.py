@@ -68,7 +68,8 @@ def run_server(accepted_versions, protocol):
         sel.close()
 
 
-if __name__ == '__main__':
+def main():
+    """Main function to run the server."""
     try:
         # load config.json
         with open('config.json', 'r') as f:
@@ -77,17 +78,29 @@ if __name__ == '__main__':
         port = config['port']
         protocol = config['protocol']
         accepted_versions = config['accepted_versions']
+        
+        # Convert port to int if it's a string
+        try:
+            port = int(port)
+        except (TypeError, ValueError):
+            print("Error: Port must be a number")
+            sys.exit(1)
+            
         if port < 1024 and port != 0:  # Avoid privileged ports
             print("Error: Please use a port number >= 1024")
             sys.exit(1)
+            
         lsock = initialize_server(host, port)
         run_server(accepted_versions, protocol)
+    except json.JSONDecodeError as e:
+        logger.error(f"Error reading config file: {e}")
+        sys.exit(1)
     except Exception as e:
-        logger.info(f"Error: {e}")
+        logger.error(f"Error: {e}")
         sys.exit(1)
     except KeyboardInterrupt:
         logger.info("\nShutting down server...")
         sys.exit(0)
-    except ValueError:
-        print(f"Error: Port must be a number")
-        sys.exit(1)
+
+if __name__ == '__main__':
+    main()

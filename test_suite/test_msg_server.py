@@ -18,7 +18,8 @@ class TestMessage(unittest.TestCase):
             selector=self.selector,
             sock=self.sock,
             addr=self.addr,
-            accepted_versions=[1]
+            accepted_versions=[1],
+            protocol="custom"
         )
         # Mock the database
         self.db_patcher = patch('msg_server.db')
@@ -163,20 +164,18 @@ class TestMessage(unittest.TestCase):
     def test_create_response_login_register(self):
         """Test creating response for login/register action."""
         self.message.protocol_mode = "json"  # Switch to JSON mode for testing
-        self.message.header = {"action": "login_register"}
+        self.message.header = {"action": "login"}
         self.message.request = self.message._json_encode({
             "username": "testuser",
             "password": "testpass"
         }, "utf-8")
         
         # Mock database response
-        self.mock_db.login_or_create_account.return_value = [{
-            "userid": "test-uuid"
-        }]
+        self.mock_db.login.return_value = [{"userid": "test-uuid"}]
         
         response = self.message._create_response_content()
         self.assertIn("content_bytes", response)
-        self.assertEqual(response["action"], "login_register_r")
+        self.assertEqual(response["action"], "login_r")
         
         # Decode response content
         content = self.message._json_decode(response["content_bytes"], "utf-8")
@@ -262,7 +261,7 @@ class TestMessage(unittest.TestCase):
         
         # Mock selector get_map
         mock_recipient = MagicMock()
-        mock_recipient.data = Message(self.selector, Mock(), "recipient-socket", accepted_versions=[1])
+        mock_recipient.data = Message(self.selector, Mock(), "recipient-socket", accepted_versions=[1], protocol="custom")
         self.selector.get_map.return_value = {1: mock_recipient}
         
         response = self.message._create_response_content()
@@ -291,15 +290,15 @@ class TestMessage(unittest.TestCase):
         """Test creating response for delete_messages action."""
         self.message.protocol_mode = "json"
         self.message.header = {"action": "delete_messages"}
-        self.message.request = self._json_encode({"msgids": [1, 2, 3]}, "utf-8")
+        self.message.request = self._json_encode({"msgids": [1, 2, 3], "deleter_uuid": "123"}, "utf-8")
 
         # Mock database response
-        self.mock_db.delete_messages.return_value = 3
+        self.mock_db.delete_messages.return_value = [("123", 2), ("456", 3)]
 
         response = self.message._create_response_content()
         content = self._json_decode(response["content_bytes"], "utf-8")
 
-        self.assertEqual(content["total_count"], 3)
+        self.assertEqual(content["total_count"], 2)
         self.assertEqual(response["action"], "delete_messages_r")
 
     def test_create_response_delete_account(self):

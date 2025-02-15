@@ -22,6 +22,9 @@ class CustomProtocol:
             "total_count",
             "username",
             "uuid",
+            "deleter_uuid",
+            "current_uuid",
+            "other_username",
         ]
 
         # defines order in which fields appear after listifying request types (alphabetical)
@@ -29,7 +32,7 @@ class CustomProtocol:
             "header": ["action", "content-length", "checksum"],
             "load_page_data": ["uuid"],
             "search_accounts": ["offset", "search_term"],
-            "delete_messages": ["msgids"],
+            "delete_messages": ["msgids", "deleter_uuid"],
             "load_undelivered": ["num_messages", "uuid"],
             "load_messages": ["num_messages", "uuid"],
             "send_message": ["message", "recipient_username", "timestamp", "uuid"],
@@ -51,6 +54,9 @@ class CustomProtocol:
             "refresh_accounts_r": ["message"],
             "check_username_r": ["message"],
             "register_r": ["uuid"],
+            "delete_account_refresh_r": ["error", "success", "total_count"],
+            "load_private_chat_r": ["messages"],
+            "load_private_chat": ["current_uuid", "other_username"]
         }
 
 

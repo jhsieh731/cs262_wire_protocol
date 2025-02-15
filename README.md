@@ -73,7 +73,7 @@ This class is responsible for handling the GUI interactions of the client, ensur
 
 - `master`: Root window
 - `user_uuid`: Unique identifier for the user, ensuring secure authentication
-- `selected_accounts`: Currently selected chat partner, enabling targeted messaging
+- `selected_account`: Currently selected chat partner, enabling targeted messaging
 - `username`: Logged-in user's name, used for personalized interactions
 - `current_page`: Tracks pagination for account searching, optimizing performance
 - `max_accounts_page`: Maximum available pages, ensuring controlled data loading

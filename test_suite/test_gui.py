@@ -16,14 +16,20 @@ class TestClientGUI(unittest.TestCase):
             self.gui = ClientGUI(self.root, self.send_to_server, self.network_thread)
         
     def tearDown(self):
-        if hasattr(self.gui, 'dialog') and self.gui.dialog:
-            self.gui.dialog.destroy()
-        self.root.destroy()
+        try:
+            if hasattr(self.gui, 'dialog') and self.gui.dialog:
+                self.gui.dialog.destroy()
+        except tk.TclError:
+            pass
+        try:
+            self.root.destroy()
+        except tk.TclError:
+            pass
         
     def test_init(self):
         """Test initialization of GUI"""
         self.assertIsNone(self.gui.user_uuid)
-        self.assertIsNone(self.gui.selected_accounts)
+        self.assertIsNone(self.gui.selected_account)
         self.assertEqual(self.gui.username, "")
         self.assertEqual(self.gui.current_page, 0)
         self.assertEqual(self.gui.max_accounts_page, 0)
@@ -117,7 +123,7 @@ class TestClientGUI(unittest.TestCase):
         self.gui.update_message_input_area()
         self.gui.message_display.config(state=tk.NORMAL)
         content = self.gui.message_display.get("1.0", tk.END).strip()
-        self.assertEqual(content, f"Send message to testuser")
+        self.assertEqual(content, f"Your chat with testuser")
 
     def test_update_accounts_list(self):
         """Test updating accounts list"""
@@ -192,11 +198,11 @@ class TestClientGUI(unittest.TestCase):
         """Test login/register functionality"""
         self.gui.username_entry.insert(0, "testuser")
         self.gui.password_entry.insert(0, "testpass")
-        self.gui.login_register()
+        self.gui.login()
         
         expected_password_hash = self.gui.hash_password("testpass")
         expected_request = {
-            "action": "login_register",
+            "action": "login",
             "content": {
                 "username": "testuser",
                 "password": expected_password_hash
@@ -230,14 +236,18 @@ class TestClientGUI(unittest.TestCase):
         self.gui.create_confirm_delete_account_page()
         self.root.update()
         response = {"success": True}
-        with patch('tkinter.messagebox.showerror') as mock_error:
+        with patch('tkinter.messagebox.showerror') as mock_error, \
+             patch('tkinter.messagebox.showinfo') as mock_info:
             self.gui.handle_server_response(response, "delete_account_r")
             mock_error.assert_not_called()
+            mock_info.assert_called_once_with("Account deleted", "Your account was successfully deleted")
+            # After successful deletion, dialog should be None
+            self.assertIsNone(self.gui.dialog)
 
     def test_handle_server_response_login_register_r(self):
         """Test handling server login response"""
         response = {"uuid": "test-uuid"}
-        self.gui.handle_server_response(response, "login_register_r")
+        self.gui.handle_server_response(response, "login_r")
         self.assertEqual(self.gui.user_uuid, "test-uuid")
 
     def test_handle_server_response_load_page_data_r(self):
@@ -355,7 +365,7 @@ class TestClientGUI(unittest.TestCase):
         self.gui.delete_messages()
         expected_request = {
             "action": "delete_messages",
-            "content": {"msgids": ["msg1"]}
+            "content": {"msgids": ["msg1"], "deleter_uuid": None}
         }
         self.send_to_server.assert_called_with(expected_request)
 

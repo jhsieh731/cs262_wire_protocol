@@ -316,7 +316,7 @@ class TestDatabase(unittest.TestCase):
 
         # Test deleting messages
         num_deleted = self.db.delete_messages(msg_ids)
-        self.assertEqual(num_deleted, len(msg_ids))
+        self.assertEqual(num_deleted, [(1, 2), (2, 2)])
 
         # Verify messages are deleted
         cursor.execute("SELECT COUNT(*) FROM messages WHERE recipientuuid = ?", (uuid2,))
@@ -338,6 +338,87 @@ class TestDatabase(unittest.TestCase):
         undelivered = self.db.load_undelivered(uuid2, 10)
         self.assertEqual(len(undelivered), 1)
         self.assertEqual(undelivered[0]["message"], "Pending message")
+
+    def test_register(self):
+        # Test successful registration
+        uuid, error = self.db.register("newuser", "password", "socket")
+        self.assertIsNotNone(uuid)
+        self.assertEqual(error, "")
+
+        # Test registration with None values
+        uuid, error = self.db.register(None, None, None)
+        self.assertIsNone(uuid)
+        self.assertNotEqual(error, "")
+
+        # Test registration with existing username
+        uuid, error = self.db.register("newuser", "password", "socket")
+        self.assertIsNone(uuid)
+        self.assertNotEqual(error, "")
+
+    def test_login(self):
+        # Create test user
+        self.register_user(self.test_user1["username"], self.test_user1["password"], self.test_user1["socket"])
+
+        # Test successful login
+        result = self.db.login(self.test_user1["username"], self.test_user1["password"], "new_socket")
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]["username"], self.test_user1["username"])
+
+        # Test login with wrong password
+        result = self.db.login(self.test_user1["username"], "wrong_password", "socket")
+        self.assertEqual(len(result), 0)
+
+        # Test login with non-existent user
+        result = self.db.login("nonexistent", "password", "socket")
+        self.assertEqual(len(result), 0)
+
+        # Test login with empty credentials
+        result = self.db.login("", "", "")
+        self.assertEqual(len(result), 0)
+
+    def test_load_private_chat(self):
+        # Create test users
+        self.register_user(self.test_user1["username"], self.test_user1["password"], self.test_user1["socket"])
+        self.register_user(self.test_user2["username"], self.test_user2["password"], self.test_user2["socket"])
+        success1, error1, uuid1 = self.db.get_user_uuid(self.test_user1["username"])
+        success2, error2, uuid2 = self.db.get_user_uuid(self.test_user2["username"])
+
+        # Store some messages
+        self.db.store_message(uuid1, uuid2, "Message 1", True, "2025-02-10 10:00:00")
+        self.db.store_message(uuid2, uuid1, "Message 2", True, "2025-02-10 10:01:00")
+
+        # Test loading chat between existing users
+        messages = self.db.load_private_chat(int(uuid1), self.test_user2["username"])
+        self.assertEqual(len(messages), 2)
+        self.assertEqual(messages[0]["message"], "Message 1")
+        self.assertEqual(messages[1]["message"], "Message 2")
+
+        # Test loading chat with non-existent user
+        messages = self.db.load_private_chat(int(uuid1), "nonexistent")
+        self.assertEqual(len(messages), 0)
+
+    def test_delete_user_messages(self):
+        # Create test users
+        self.register_user(self.test_user1["username"], self.test_user1["password"], self.test_user1["socket"])
+        self.register_user(self.test_user2["username"], self.test_user2["password"], self.test_user2["socket"])
+        success1, error1, uuid1 = self.db.get_user_uuid(self.test_user1["username"])
+        success2, error2, uuid2 = self.db.get_user_uuid(self.test_user2["username"])
+
+        # Store messages
+        self.db.store_message(uuid1, uuid2, "Message 1", True, "2025-02-10 10:00:00")
+        self.db.store_message(uuid2, uuid1, "Message 2", True, "2025-02-10 10:01:00")
+
+        # Test deleting messages for existing user
+        result = self.db.delete_user_messages(int(uuid1))
+        self.assertTrue(len(result) > 0)
+
+        # Verify messages are deleted
+        messages = self.db.load_private_chat(int(uuid1), self.test_user2["username"])
+        self.assertEqual(len(messages), 0)
+
+        # Test deleting messages for non-existent user
+        result = self.db.delete_user_messages(999)
+        self.assertEqual(len(result), 0)
 
 if __name__ == "__main__":
     unittest.main()

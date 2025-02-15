@@ -31,6 +31,31 @@ class Message:
         if self.protocol_mode not in ["json", "custom"]:
             return ValueError(f"Invalid protocol mode {self.protocol_mode!r}.")
 
+    def _unicast(self, recipient_socket, message):
+        """Send a message to a specific recipient socket.
+        
+        Args:
+            recipient_socket (str): The socket address of the recipient
+            message (bytes): The message to send
+            
+        Returns:
+            bool: True if message was queued successfully, False otherwise
+        """
+        try:
+            # Find the socket object associated with the recipient
+            for key, data in self.selector.get_map().items():
+                if data.data and isinstance(data.data, Message) and str(data.data.addr) == recipient_socket:
+                    logger.info(f"Relaying message to {recipient_socket}")
+                    data.data._send_buffer += message
+                    data.data._set_selector_events_mask("w")
+                    return True
+            
+            logger.error(f"Error: Could not find recipient socket {recipient_socket}")
+            return False
+        except Exception as e:
+            logger.error(f"Error relaying message: {e}")
+            return False
+
     def _set_selector_events_mask(self, mode):
         """Set selector to listen for events: mode is 'r', 'w', or 'rw'."""
         if mode == "r":
@@ -124,6 +149,18 @@ class Message:
                 return False
         return True
 
+    def broadcast(self, refresh_message):
+        # Collect sockets to notify first
+        sockets_to_notify = []
+        for _, data in self.selector.get_map().items():
+            if data.data and isinstance(data.data, Message) and data.data.sock != self.sock:
+                sockets_to_notify.append(data.data)
+
+        # Then notify each socket
+        for socket_data in sockets_to_notify:
+            socket_data._send_buffer += refresh_message
+            socket_data._set_selector_events_mask("w")
+
     def _create_response_content(self):
         """Create response content based on the request"""
         # First decode the request content
@@ -198,16 +235,7 @@ class Message:
                     content_length=len(refresh_content_bytes)
                 )
                 
-                # Collect sockets to notify first
-                sockets_to_notify = []
-                for _, data in self.selector.get_map().items():
-                    if data.data and isinstance(data.data, Message) and data.data.sock != self.sock:
-                        sockets_to_notify.append(data.data)
-                
-                # Then notify each socket
-                for socket_data in sockets_to_notify:
-                    socket_data._send_buffer += refresh_message
-                    socket_data._set_selector_events_mask("w")
+                self.broadcast(refresh_message)
                 
                 response_content = {
                     "uuid": uuid,
@@ -296,21 +324,7 @@ class Message:
                         content_length=len(relay_content_bytes)
                     )
                     
-                    # Send message to recipient's socket
-                    try:
-                        # Find the socket object associated with the recipient
-                        for key, data in self.selector.get_map().items():
-                            if data.data and isinstance(data.data, Message) and str(data.data.addr) == recipient_socket:
-                                logger.info(f"Relaying message to {recipient_socket}")
-                                status = True
-                                data.data._send_buffer += relay_message
-                                data.data._set_selector_events_mask("w")
-                                break
-                        else:
-                            logger.error(f"Error: Could not find recipient socket {recipient_socket}")
-                            status = False
-                    except Exception as e:
-                        logger.error(f"Error relaying message: {e}")
+                    status = self._unicast(recipient_socket, relay_message)
 
                 # Store the message
                 success_status, error_msg = db.store_message(sender_uuid, recipient_uuid, message_text, status, timestamp)
@@ -336,9 +350,44 @@ class Message:
             action = "load_undelivered_r"
         elif self.header["action"] == "delete_messages":
             msg_ids = request_content.get("msgids", [])
-            num_deleted = db.delete_messages(msg_ids)
+            logger.info(f"msg_ids: {msg_ids}")
+            deleter_uuid = request_content.get("deleter_uuid", None)
+            logger.info(f"deleter_uuid: {deleter_uuid}")
+            delete_messages_result = db.delete_messages(msg_ids)
+            logger.info(f"delete_messages_result: {delete_messages_result}")
+            deleter_num_messages = 0
+
+            for uuid, num_deleted in delete_messages_result:
+                if uuid == deleter_uuid:
+                    deleter_num_messages = num_deleted
+                    continue
+                # Get recipient's associated socket
+                recipient_socket = db.get_associated_socket(uuid)
+                logger.info(f"recipient_socket: {recipient_socket}")
+                
+                # ensure all fields are there
+                if recipient_socket:
+                    # Create message content for recipient
+                    relay_content = {
+                        "total_count": num_deleted,
+                    }
+                    
+                    # Convert content to bytes for sending
+                    if self.protocol_mode == "json":
+                        relay_content_bytes = self._json_encode(relay_content, "utf-8")
+                    elif self.protocol_mode == "custom":
+                        relay_content_bytes = self.custom_protocol.serialize(relay_content)
+                    
+                    relay_message = self._create_message(
+                        content_bytes=relay_content_bytes,
+                        action="delete_messages_r",
+                        content_length=len(relay_content_bytes)
+                    )
+                    
+                status = self._unicast(recipient_socket, relay_message)
+
             response_content = {
-                "total_count": num_deleted,
+                "total_count": deleter_num_messages,
             }
             action = "delete_messages_r"
         elif self.header["action"] == "delete_account":
@@ -351,34 +400,36 @@ class Message:
             success = False
             error_message = ""
             if stored_password == password:
-                # Password matches, delete the account
+                logger.info("Passwords match")
                 if db.delete_user(user_uuid):
+                    logger.info("User deleted")
                     success = True
-                    # Notify all other clients to refresh their account lists
-                    response_content = {}
-                    if self.protocol_mode == "json":
-                        response_content_bytes = self._json_encode(response_content, "utf-8")
-                    else:
-                        response_content_bytes = self.custom_protocol.serialize(response_content)
+                    # First delete all messages and notify affected users
+                    message_counts = db.delete_user_messages(user_uuid)
                     
-                    refresh_message = self._create_message(
-                        content_bytes=response_content_bytes,
-                        action="refresh_accounts_r",
-                        content_length=len(response_content_bytes)
-                    )
-                    
-                    # Collect sockets to notify first
-                    sockets_to_notify = []
-                    for key, data in self.selector.get_map().items():
-                        if data.data and isinstance(data.data, Message) and data.data.sock != self.sock:
-                            sockets_to_notify.append(data.data)
-                    
-                    # Then notify each socket
-                    for socket_data in sockets_to_notify:
-                        socket_data._send_buffer += refresh_message
-                        socket_data._set_selector_events_mask("w")
+                    # Notify each affected user about their deleted messages
+                    for affected_uuid, num_deleted in message_counts:
+                        if affected_uuid != user_uuid:  # Don't notify the user being deleted
+                            recipient_socket = db.get_associated_socket(affected_uuid)
+                            if recipient_socket:
+                                notify_content = {"total_count": num_deleted,
+                                                 "success": success,
+                                                 "error": error_message}
+                                
+                                if self.protocol_mode == "json":
+                                    notify_content_bytes = self._json_encode(notify_content, "utf-8")
+                                else:
+                                    notify_content_bytes = self.custom_protocol.serialize(notify_content)
+                                    
+                                notify_message = self._create_message(
+                                    content_bytes=notify_content_bytes,
+                                    action="delete_account_refresh_r",
+                                    content_length=len(notify_content_bytes)
+                                )
+                                self._unicast(recipient_socket, notify_message)
                 else:
                     error_message = "Failed to delete account"
+    
             else:
                 error_message = "Incorrect password"
             response_content = {
@@ -386,6 +437,16 @@ class Message:
                 "error": error_message,
             }
             action = "delete_account_r"
+            
+        elif self.header["action"] == "load_private_chat":
+            current_uuid = request_content.get("current_uuid")
+            other_username = request_content.get("other_username")
+            
+            messages = db.load_private_chat(current_uuid, other_username)
+            response_content = {
+                "messages": messages
+            }
+            action = "load_private_chat_r"
         elif self.header["action"] == "error":
             response_content = {
                 "error": f"An error occurred. Please try again."

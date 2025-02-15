@@ -150,6 +150,58 @@ class MessageDatabase:
             if conn:
                 conn.close()
                 
+    def load_private_chat(self, current_uuid: int, other_username: str) -> List[dict]:
+        """Load all messages between current user and other user.
+        
+        Args:
+            current_uuid: UUID of the current user
+            other_username: Username of the other user
+            
+        Returns:
+            List of messages with sender, recipient, and message content
+        """
+        try:
+            conn = self.connect()
+            if not conn:
+                return []
+                
+            cursor = conn.cursor()
+            
+            # First get the UUID of the other user
+            cursor.execute("""
+                SELECT userid FROM users WHERE username = ?
+            """, (other_username,))
+            result = cursor.fetchone()
+            if not result:
+                return []
+                
+            other_uuid = result[0]
+            
+            # Get all messages between these users
+            cursor.execute("""
+                SELECT m.message, m.timestamp, s.username as sender_username, r.username as recipient_username, status
+                FROM messages m
+                JOIN users s ON m.senderuuid = s.userid
+                JOIN users r ON m.recipientuuid = r.userid
+                WHERE (m.senderuuid = ? AND m.recipientuuid = ?)
+                   OR (m.senderuuid = ? AND m.recipientuuid = ?)
+                ORDER BY m.timestamp ASC
+            """, (current_uuid, other_uuid, other_uuid, current_uuid))
+            
+            messages = [{
+                "message": row[0],
+                "timestamp": row[1],
+                "sender_username": row[2],
+                "recipient_username": row[3],
+                "status": row[4]
+            } for row in cursor.fetchall()]
+            
+            return messages
+            
+        except sqlite3.Error as e:
+            logger.error(f"Error loading private chat: {e}")
+            return []
+            
     def get_user_uuid(self, username: str) -> tuple[bool, str, str]:
         """
         Get a user's UUID by their username.
@@ -310,6 +362,53 @@ class MessageDatabase:
             if conn:
                 conn.close()
 
+    def delete_user_messages(self, uuid: int) -> List[Tuple[int, int]]:
+        """Delete all messages associated with a user and return a list of (uuid, num_deleted) tuples.
+        
+        Args:
+            uuid: The UUID of the user whose messages to delete
+            
+        Returns:
+            List of tuples containing (uuid, num_deleted) for each affected user
+        """
+        try:
+            conn = self.connect()
+            if not conn:
+                return []
+                
+            cursor = conn.cursor()
+            
+            # First get all messages where user is sender or recipient
+            cursor.execute("""
+                SELECT senderuuid, recipientuuid FROM messages 
+                WHERE senderuuid = ? OR recipientuuid = ?
+            """, (uuid, uuid))
+            
+            # Track message counts per user
+            user_counts = {}
+            for sender_uuid, recipient_uuid in cursor.fetchall():
+                if sender_uuid not in user_counts:
+                    user_counts[sender_uuid] = 1
+                if recipient_uuid not in user_counts:
+                    user_counts[recipient_uuid] = 1
+                user_counts[sender_uuid] += 1
+                user_counts[recipient_uuid] += 1
+            
+            # Delete all messages
+            cursor.execute("""
+                DELETE FROM messages 
+                WHERE senderuuid = ? OR recipientuuid = ?
+            """, (uuid, uuid))
+            
+            conn.commit()
+            
+            # Convert counts to list of tuples
+            return [(uuid, count) for uuid, count in user_counts.items()]
+            
+        except sqlite3.Error as e:
+            logger.error(f"Error deleting user messages: {e}")
+            return []
+            
     def delete_user(self, uuid: int) -> bool:
         """
         Delete a user by their UUID.
@@ -439,10 +538,23 @@ class MessageDatabase:
         try:
             conn = self.connect()
             if conn is None:
-                return 0
+                return []
+
+            # Initialize UUID counter dictionary
+            uuid_counter = {}
+            cursor = conn.cursor()
+
+            # First get all UUIDs for the messages
+            for msg_id in msg_ids:
+                cursor.execute("SELECT senderuuid, recipientuuid FROM messages WHERE msgid = ?", (msg_id,))
+                result = cursor.fetchone()
+                if result:
+                    sender_uuid, recipient_uuid = result
+                    # Increment counter for both sender and recipient
+                    uuid_counter[sender_uuid] = uuid_counter.get(sender_uuid, 0) + 1
+                    uuid_counter[recipient_uuid] = uuid_counter.get(recipient_uuid, 0) + 1
 
             # run deletions
-            cursor = conn.cursor()
             for msg_id in msg_ids:
                 cursor.execute("DELETE FROM messages WHERE msgid = ?", (msg_id,))
                 logger.info(f"Deleted message: {msg_id}")
@@ -457,13 +569,14 @@ class MessageDatabase:
             num_remaining = cursor.fetchone()[0]
             logger.info(f"Number of messages remaining: {num_remaining}")
 
-            num_deleted = len(msg_ids) - num_remaining
-            logger.info(f"Deleted {num_deleted} messages")
-            return num_deleted
+            # Convert uuid_counter to list of tuples
+            uuid_counts = [(uuid, count) for uuid, count in uuid_counter.items()]
+            logger.info(f"UUID deletion counts: {uuid_counts}")
+            return uuid_counts
 
         except sqlite3.Error as e:
             logger.error(f"Error deleting messages: {e}")
-            return 0
+            return []
         finally:
             if conn:
                 conn.close()
@@ -502,9 +615,7 @@ class MessageDatabase:
 
             # update status to delivered for these messages
             msg_ids = [msg["msgid"] for msg in messages]
-            # cursor.execute("UPDATE messages SET status = 'delivered' WHERE msgid IN ({})".format(",".join("?" * len(msg_ids))), msg_ids)
-            current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            cursor.execute("UPDATE messages SET status = 'delivered', timestamp = ? WHERE msgid IN ({})".format(",".join("?" * len(msg_ids))), [current_time] + msg_ids)
+            cursor.execute("UPDATE messages SET status = 'delivered' WHERE msgid IN ({})".format(",".join("?" * len(msg_ids))), msg_ids)
             conn.commit()
             return [dict(message) for message in messages]
 

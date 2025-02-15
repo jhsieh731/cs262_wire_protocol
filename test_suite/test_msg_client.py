@@ -25,7 +25,8 @@ class TestMessage(unittest.TestCase):
             sock=self.sock,
             addr=self.addr,
             gui=self.gui,
-            request=self.request
+            request=self.request,
+            protocol="custom"
         )
 
     def tearDown(self):
