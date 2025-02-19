@@ -4,16 +4,17 @@ import threading
 import tkinter as tk
 from tkinter import scrolledtext, messagebox
 from logger import set_logger
+import chat_pb2
 
 logger = set_logger("gui", "gui.log")
 
 # GUI Setup
 class ClientGUI:
-    def __init__(self, master, send_to_server, network_thread):
+    def __init__(self, master, client):
         self.master = master
-        self.master.title("Client Application")
-        self.send_to_server = send_to_server
-        self.network_thread = network_thread
+        self.master.title("Chat Application")
+        self.client = client
+        self.client.set_update_callback(self.handle_server_update)
         
         self.user_uuid = None
         self.selected_account = None
@@ -22,7 +23,7 @@ class ClientGUI:
         self.max_accounts_page = 0
         self.num_messages = 10
         self.num_undelivered = 0
-        self.msgid_map = {}  # Dictionary to map listbox indices to msgid
+        self.msgid_map = {}
 
         self.login_frame = tk.Frame(master)
         self.chat_frame = tk.Frame(master)
@@ -268,8 +269,6 @@ class ClientGUI:
         cancel_button = tk.Button(self.dialog, text="Cancel", command=self.dialog.destroy)
         cancel_button.pack(pady=5)
 
-
-
     # ===================================================================
     # ===================================================================
     # Helper/User event functions
@@ -277,10 +276,8 @@ class ClientGUI:
     # ===================================================================
 
     def hash_password(self, password):
-        """Hashes a password using SHA-256."""
-        password_bytes = password.encode('utf-8')
-        sha_hash = hashlib.sha256(password_bytes)
-        return sha_hash.hexdigest()
+        """Hash password using SHA-256."""
+        return hashlib.sha256(password.encode('utf-8')).hexdigest()
 
     def prev_page(self):
         if self.current_page > 0:
@@ -368,91 +365,127 @@ class ClientGUI:
             callback: Optional function to call after the request is processed
         """
         def send_with_callback():
-            self.send_to_server(request)
+            self.client.send_request(request)
             if callback:
                 self.master.after(100, callback)  # Schedule callback on main thread after 100ms
                 
         thread = threading.Thread(target=send_with_callback)
         thread.start()
 
-    def check_username(self): 
+    def check_username(self):
         logger.info(f"F {self.username}: Check username")
         username = self.username_entry.get()
-        if not username:
-            return
-        request = {
-            "action": "check_username",
-            "content": {"username": username},
-        }
-        if not self.is_threading:
-            self.is_threading = True
-            threading.Thread(target=lambda: self.network_thread(request), daemon=True).start()
-        else:
-            self.thread_send(request)
-
-        self.thread_send(request)
+        if username:
+            response = self.client.check_username(username)
+            if response.is_available:
+                self.create_register_page()
+                self.register_username_entry.insert(0, username)
+                self.register_username_entry.config(state=tk.DISABLED)
+            else:
+                self.create_login_page()
+                self.username_entry.insert(0, username)
 
     def register(self):
         logger.info(f"F {self.username}: Register")
         username = self.register_username_entry.get()
         password = self.register_password_entry.get()
         if username and password:
-            request = {
-                "action": "register",
-                "content": {"username": username, "password": self.hash_password(password)},
-            }
-            self.thread_send(request)
+            response = self.client.register(username, self.hash_password(password))
+            if response.success:
+                self.username = username
+                self.user_uuid = response.uuid
+                self.client.start_update_stream(self.user_uuid)
+                self.create_chat_page()
+                self.master.after(500, self.search_accounts)
+            else:
+                self.create_error_page(response.error)
 
     def load_page_data(self):
-        logger.info(f"F {self.username}: Load page data")
-        request = {
-            "action": "load_page_data",
-            "content": {"uuid": self.user_uuid},
-        }
-        self.thread_send(request)
+        """Load initial page data."""
+        try:
+            # Load messages
+            messages_response = self.client.load_messages(self.user_uuid, self.num_messages)
+            
+            # Convert messages to the format expected by update_messages_list
+            messages = [
+                [msg.message_id, msg.sender_username, msg.recipient_username, 
+                 msg.message, msg.timestamp, msg.status]
+                for msg in messages_response.messages
+            ]
+            
+            # Load accounts
+            accounts_response = self.client.search_accounts("", 0)
+            accounts = [
+                (acc.uuid, acc.username)
+                for acc in accounts_response.accounts
+                if acc.username != self.username
+            ]
+            
+            # Update the GUI
+            self.update_messages_list(messages, messages_response.total_undelivered)
+            self.update_accounts_list(accounts)
+            
+            # Update pagination
+            self.max_accounts_page = (accounts_response.total_count // 10)
+            self.prev_button["state"] = tk.NORMAL if self.current_page > 0 else tk.DISABLED
+            self.next_button["state"] = tk.NORMAL if self.current_page < self.max_accounts_page else tk.DISABLED
+            
+        except Exception as e:
+            logger.error(f"Error loading page data: {e}")
+            messagebox.showerror("Error", f"Failed to load page data: {e}")
 
     def search_accounts(self):
         logger.info(f"F {self.username}: Searching accounts")
         search_term = self.search_bar.get().lower()
-        request = {
-            "action": "search_accounts",
-            "content": {"search_term": search_term, "offset": self.current_page * 10},
-        }
-        self.thread_send(request)
+        response = self.client.search_accounts(search_term, self.current_page * 10)
+        
+        accounts = [(acc.uuid, acc.username) for acc in response.accounts 
+                   if acc.username != self.username]
+        total_count = response.total_count
+        
+        self.update_accounts_list(accounts)
+        self.max_accounts_page = (total_count // 10)
+        self.prev_button["state"] = tk.NORMAL if self.current_page > 0 else tk.DISABLED
+        self.next_button["state"] = tk.NORMAL if self.current_page < self.max_accounts_page else tk.DISABLED
 
     def delete_messages(self):
         logger.info(f"F {self.username}: Delete messages")
         selected_indices = self.messages_listbox.curselection()
-        selected_msgids = [self.msgid_map[i] for i in selected_indices if i in self.msgid_map]
-        request = {
-            "action": "delete_messages",
-            "content": {"msgids": selected_msgids, "deleter_uuid": self.user_uuid},
-        }
-        self.thread_send(request)
+        message_ids = [self.msgid_map[i] for i in selected_indices if i in self.msgid_map]
+        if message_ids:
+            response = self.client.delete_messages(message_ids, self.user_uuid)
+            if response.success:
+                self.num_messages -= response.total_deleted
+                self.load_messages()
+                self.master.after(500, self.update_message_input_area)
 
     def load_undelivered_messages(self):
         logger.info(f"F {self.username}: Load undelivered messages")
         num_messages = int(self.num_messages_entry.get())
-        if num_messages < 1 or num_messages > int(self.num_undelivered):
-            tk.messagebox.showwarning("Invalid Input", f"Please enter a number between 1 and {self.num_undelivered} (your current number of undelivered messages).")
+        if num_messages < 1 or num_messages > self.num_undelivered:
+            messagebox.showwarning(
+                "Invalid Input", 
+                f"Please enter a number between 1 and {self.num_undelivered}"
+            )
             return
-        request = {
-            "action": "load_undelivered",
-            "content": {"num_messages": num_messages, "uuid": self.user_uuid},
-        }
-        self.thread_send(request)
 
+        response = self.client.load_undelivered_messages(self.user_uuid, num_messages)
+        self.num_undelivered -= len(response.messages)
+        self.num_messages += len(response.messages)
+        self.load_messages()
+        self.master.after(500, self.update_message_input_area)
 
     def load_messages(self):
         logger.info(f"F {self.username}: Load messages")
         num_messages = self.num_messages
         logger.info(f"Loading {num_messages} messages")
-        request = {
-            "action": "load_messages",
-            "content": {"num_messages": num_messages, "uuid": self.user_uuid},
-        }
-        self.thread_send(request)
-
+        response = self.client.load_messages(self.user_uuid, num_messages)
+        messages = [
+            [msg.message_id, msg.sender_username, msg.recipient_username, 
+             msg.message, msg.timestamp]
+            for msg in response.messages
+        ]
+        self.update_messages_list(messages, response.total_undelivered)
 
     def send_message(self):
         logger.info(f"F {self.username}: Send message")
@@ -462,41 +495,89 @@ class ClientGUI:
             self.entry.delete(0, tk.END)
             timestamp = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
-            request = {
-                "action": "send_message",
-                "content": {"uuid": self.user_uuid, "recipient_username": self.selected_account, "message": msg, "timestamp": timestamp},
-            }
-            self.thread_send(request)
+            response = self.client.send_message(
+                self.user_uuid,
+                self.selected_account,
+                msg,
+                timestamp
+            )
+            if response.success:
+                self.num_messages += 1
+                self.load_messages()
+                self.master.after(500, self.update_message_input_area)
+            else:
+                messagebox.showerror("Error", response.error)
 
     def login(self):
         logger.info(f"F {self.username}: Login")
         username = self.username_entry.get()
         password = self.password_entry.get()
         if username and password:
-            request = {
-                "action": "login",
-                "content": {"username": username, "password": self.hash_password(password)},
-            }
-            self.username = username
-            if not self.is_threading:
-                self.is_threading = True
-                threading.Thread(target=lambda: self.network_thread(request), daemon=True).start()
+            response = self.client.login(username, self.hash_password(password))
+            if response.success:
+                self.username = username
+                self.user_uuid = response.uuid
+                self.client.start_update_stream(self.user_uuid)
+                self.create_chat_page()
             else:
-                self.thread_send(request)
-
+                self.create_error_page(response.error)
 
     def delete_account(self):
         logger.info(f"F {self.username}: Delete account")
         password = self.dialog_password_entry.get()
-        request = {
-            "action": "delete_account",
-            "content": {
-                "uuid": self.user_uuid,
-                "password": self.hash_password(password),
-            }
-        }
-        self.thread_send(request)
+        response = self.client.delete_account(self.user_uuid, self.hash_password(password))
+        if response.success:
+            self.dialog.destroy()
+            messagebox.showinfo("Success", "Account deleted successfully")
+            self.master.quit()
+        else:
+            messagebox.showerror("Error", response.error)
 
+    def handle_server_update(self, update):
+        """Handle real-time updates from server."""
+        if update.HasField('new_message'):
+            msg = update.new_message
+            self.handle_new_message(msg)
+        elif update.HasField('account_update'):
+            self.handle_account_update(update.account_update)
+        elif update.HasField('message_deletion'):
+            self.handle_message_deletion(update.message_deletion)
+
+    def handle_new_message(self, message):
+        """Handle new message update."""
+        self.num_messages += 1
+        self.load_messages()
+        if message.sender_username == self.selected_account:
+            self.update_message_input_area()
+
+    def handle_account_update(self, update):
+        """Handle account update."""
+        self.search_accounts()
+
+    def handle_message_deletion(self, deletion):
+        """Handle message deletion update."""
+        self.num_messages -= deletion.total_count
+        self.load_messages()
+        self.update_message_input_area()
+
+    def load_private_chat(self):
+        if not self.selected_account:
+            return
+            
+        response = self.client.load_private_chat(self.user_uuid, self.selected_account)
+        self.message_display.config(state=tk.NORMAL)
+        self.message_display.delete("3.0", tk.END)
+        
+        for msg in response.messages:
+            if msg.status == chat_pb2.MessageStatus.PENDING and msg.recipient_username == self.username:
+                continue
+            self.message_display.insert(
+                tk.END, 
+                f"[{msg.timestamp}] {msg.sender_username}: {msg.message}\n"
+            )
+        
+        self.message_display.config(state=tk.DISABLED)
+        self.message_display.see(tk.END)
 
     # ===================================================================
     # ===================================================================

@@ -1,0 +1,174 @@
+syntax = "proto3";
+
+package chat;
+
+service ChatService {
+  // Authentication
+  rpc Login (LoginRequest) returns (LoginResponse);
+  rpc Register (RegisterRequest) returns (RegisterResponse);
+  rpc CheckUsername (CheckUsernameRequest) returns (CheckUsernameResponse);
+  
+  // Account Management
+  rpc DeleteAccount (DeleteAccountRequest) returns (DeleteAccountResponse);
+  rpc SearchAccounts (SearchAccountsRequest) returns (SearchAccountsResponse);
+  
+  // Messaging
+  rpc SendMessage (SendMessageRequest) returns (SendMessageResponse);
+  rpc LoadMessages (LoadMessagesRequest) returns (LoadMessagesResponse);
+  rpc LoadUndeliveredMessages (LoadUndeliveredRequest) returns (LoadUndeliveredResponse);
+  rpc DeleteMessages (DeleteMessagesRequest) returns (DeleteMessagesResponse);
+  rpc LoadPrivateChat (LoadPrivateChatRequest) returns (LoadPrivateChatResponse);
+  
+  // Real-time Updates
+  rpc StreamUpdates (StreamUpdatesRequest) returns (stream UpdateResponse);
+}
+
+// Request/Response messages
+message LoginRequest {
+  string username = 1;
+  string hashed_password = 2;
+}
+
+message LoginResponse {
+  bool success = 1;
+  string error = 2;
+  int32 uuid = 3;
+}
+
+message RegisterRequest {
+  string username = 1;
+  string hashed_password = 2;
+}
+
+message RegisterResponse {
+  bool success = 1;
+  string error = 2;
+  int32 uuid = 3;
+}
+
+message CheckUsernameRequest {
+  string username = 1;
+}
+
+message CheckUsernameResponse {
+  bool is_available = 1;
+}
+
+message DeleteAccountRequest {
+  int32 uuid = 1;
+  string hashed_password = 2;
+}
+
+message DeleteAccountResponse {
+  bool success = 1;
+  string error = 2;
+}
+
+message SearchAccountsRequest {
+  string search_term = 1;
+  int32 offset = 2;
+}
+
+message SearchAccountsResponse {
+  repeated Account accounts = 1;
+  int32 total_count = 2;
+}
+
+message SendMessageRequest {
+  int32 sender_uuid = 1;
+  string recipient_username = 2;
+  string message = 3;
+  string timestamp = 4;
+}
+
+message SendMessageResponse {
+  bool success = 1;
+  string error = 2;
+}
+
+message LoadMessagesRequest {
+  int32 uuid = 1;
+  int32 num_messages = 2;
+}
+
+message LoadMessagesResponse {
+  repeated Message messages = 1;
+  int32 total_undelivered = 2;
+}
+
+message LoadUndeliveredRequest {
+  int32 uuid = 1;
+  int32 num_messages = 2;
+}
+
+message LoadUndeliveredResponse {
+  repeated Message messages = 1;
+}
+
+message DeleteMessagesRequest {
+  repeated int32 message_ids = 1;
+  int32 deleter_uuid = 2;
+}
+
+message DeleteMessagesResponse {
+  bool success = 1;
+  int32 total_deleted = 2;
+}
+
+message LoadPrivateChatRequest {
+  int32 current_uuid = 1;
+  string other_username = 2;
+}
+
+message LoadPrivateChatResponse {
+  repeated Message messages = 1;
+}
+
+message StreamUpdatesRequest {
+  int32 uuid = 1;
+}
+
+message UpdateResponse {
+  oneof update {
+    Message new_message = 1;
+    AccountUpdate account_update = 2;
+    MessageDeletion message_deletion = 3;
+  }
+}
+
+// Common message types
+message Account {
+  int32 uuid = 1;
+  string username = 2;
+}
+
+message Message {
+  int32 message_id = 1;
+  string sender_username = 2;
+  string recipient_username = 3;
+  string message = 4;
+  string timestamp = 5;
+  MessageStatus status = 6;
+}
+
+message AccountUpdate {
+  UpdateType type = 1;
+  Account account = 2;
+}
+
+message MessageDeletion {
+  repeated int32 deleted_message_ids = 1;
+  int32 total_count = 2;
+}
+
+enum MessageStatus {
+  PENDING = 0;
+  DELIVERED = 1;
+  SEEN = 2;
+}
+
+enum UpdateType {
+  ACCOUNT_ADDED = 0;
+  ACCOUNT_REMOVED = 1;
+  ACCOUNT_MODIFIED = 2;
+} 
