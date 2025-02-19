@@ -85,7 +85,7 @@ class ChatServicer(chat_pb2_grpc.ChatServiceServicer):
 
     def SendMessage(self, request, context):
         try:
-            success, error = self.db.store_message(
+            success, error, msg_id = self.db.store_message(
                 request.sender_uuid,
                 request.recipient_username,
                 request.message,
@@ -93,8 +93,8 @@ class ChatServicer(chat_pb2_grpc.ChatServiceServicer):
                 request.timestamp
             )
             if success:
-                # Notify recipient
-                self._notify_new_message(request)
+                # Notify recipient with message ID
+                self._notify_new_message(request, msg_id)
                 return chat_pb2.SendMessageResponse(success=True)
             return chat_pb2.SendMessageResponse(success=False, error=error)
         except Exception as e:
@@ -178,33 +178,40 @@ class ChatServicer(chat_pb2_grpc.ChatServiceServicer):
             while context.is_active():
                 # Use time.sleep instead of context.sleep
                 time.sleep(1)
+                # Yield any pending updates
+                yield from context.pending_updates if hasattr(context, 'pending_updates') else []
         except Exception as e:
             logger.error(f"Stream error: {e}")
         finally:
-            # Clean up when the stream ends
             if request.uuid in self.active_streams:
                 self.active_streams[request.uuid].remove(context)
                 if not self.active_streams[request.uuid]:
                     del self.active_streams[request.uuid]
 
-    def _notify_new_message(self, message):
+    def _notify_new_message(self, message, msg_id):
         """Notify recipient of new message through their active stream."""
-        recipient_uuid = self.db.get_user_uuid(message.recipient_username)[2]
-        if recipient_uuid in self.active_streams:
-            update = chat_pb2.UpdateResponse(
-                new_message=self._convert_to_message_proto({
-                    'sender_username': self.db.get_user_username(message.sender_uuid),
-                    'recipient_username': message.recipient_username,
-                    'message': message.message,
-                    'timestamp': message.timestamp,
-                    'status': 'delivered'
-                })
-            )
-            for stream in self.active_streams[recipient_uuid]:
-                try:
-                    stream.send(update)
-                except Exception as e:
-                    logger.error(f"Failed to send update: {e}")
+        try:
+            success, _, recipient_uuid = self.db.get_user_uuid(message.recipient_username)
+            if success and recipient_uuid in self.active_streams:
+                update = chat_pb2.UpdateResponse(
+                    new_message=chat_pb2.Message(
+                        message_id=msg_id,
+                        sender_username=self.db.get_user_username(message.sender_uuid),
+                        recipient_username=message.recipient_username,
+                        message=message.message,
+                        timestamp=message.timestamp,
+                        status=chat_pb2.MessageStatus.DELIVERED
+                    )
+                )
+                for stream in self.active_streams[recipient_uuid]:
+                    try:
+                        if not hasattr(stream, 'pending_updates'):
+                            stream.pending_updates = []
+                        stream.pending_updates.append(update)
+                    except Exception as e:
+                        logger.error(f"Failed to send update: {e}")
+        except Exception as e:
+            logger.error(f"Error in notify_new_message: {e}")
 
     def _notify_message_deletions(self, affected_users):
         """Notify users about deleted messages."""

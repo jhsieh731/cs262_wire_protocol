@@ -145,101 +145,112 @@ class ClientGUI:
         self.create_account_button.pack(padx=10, pady=5)
 
     def create_chat_page(self):
+        """Create the main chat page."""
         self.clear_frame(self.login_frame)
-        self.clear_frame(self.error_frame)
-        self.clear_frame(self.create_account_frame)
         self.clear_frame(self.register_frame)
+        self.clear_frame(self.error_frame)
         self.chat_frame.pack(fill=tk.BOTH, expand=True)
 
-        # First column: Accounts list with search bar and pagination
-        self.accounts_frame = tk.Frame(self.chat_frame)
-        self.accounts_frame.grid(row=0, column=0, sticky="nsew")
+        # Configure grid weights for the main chat frame
+        self.chat_frame.grid_columnconfigure(0, weight=1)  # Messages list
+        self.chat_frame.grid_columnconfigure(1, weight=1)  # Accounts list
+        self.chat_frame.grid_columnconfigure(2, weight=1)  # Message display
+        self.chat_frame.grid_rowconfigure(0, weight=1)
 
-        search_frame = tk.Frame(self.accounts_frame)
-        search_frame.pack(padx=10, pady=5)
+        # Left column - Messages list
+        messages_frame = tk.Frame(self.chat_frame)
+        messages_frame.grid(row=0, column=0, sticky="nsew", padx=5, pady=5)
         
-        self.search_bar = tk.Entry(search_frame)
-        self.search_bar.pack(side=tk.LEFT, padx=(0, 5))
+        # Messages header
+        self.messages_label = tk.Label(messages_frame, text=f"{self.username}'s messages")
+        self.messages_label.grid(row=0, column=0, sticky="w", padx=5, pady=5)
         
-        self.search_button = tk.Button(search_frame, text="Search", command=self.search_accounts)
-        self.search_button.pack(side=tk.LEFT)
-
-        # Delete Account Button
-        account_buttons_frame = tk.Frame(self.accounts_frame)
-        account_buttons_frame.pack(pady=5)
+        # Undelivered messages section
+        self.undelivered_label = tk.Label(messages_frame, text="No undelivered messages")
+        self.undelivered_label.grid(row=1, column=0, sticky="w", padx=5)
         
-        self.delete_account_button = tk.Button(account_buttons_frame, text="Delete my account", command=self.create_confirm_delete_account_page, fg="red")
-        self.delete_account_button.pack(side=tk.LEFT, padx=5)
-
-        self.accounts_listbox = tk.Listbox(self.accounts_frame)
-        self.accounts_listbox.pack(padx=10, pady=5, fill=tk.BOTH, expand=True)
-        self.accounts_listbox.bind('<<ListboxSelect>>', self.on_account_select)
-
-        self.pagination_frame = tk.Frame(self.accounts_frame)
-        self.pagination_frame.pack(padx=10, pady=5)
-
-        self.prev_button = tk.Button(self.pagination_frame, text="Prev", command=self.prev_page)
-        self.prev_button.pack(side=tk.LEFT, padx=5)
-        self.next_button = tk.Button(self.pagination_frame, text="Next", command=self.next_page)
-        self.next_button.pack(side=tk.LEFT, padx=5)
-
-        # Second column: Messages list with options
-        self.messages_frame = tk.Frame(self.chat_frame)
-        self.messages_frame.grid(row=0, column=1, sticky="nsew")
-
-        self.messages_label = tk.Label(self.messages_frame, text=self.username + "'s messages")
-        self.messages_label.pack(padx=10, pady=5)
-
-        self.undelivered_label = tk.Label(self.messages_frame, text="Undelivered messages: 0")
-        self.undelivered_label.pack(padx=10, pady=5)
-
-        undelivered_frame = tk.Frame(self.messages_frame)
-        undelivered_frame.pack(pady=5)
+        undelivered_frame = tk.Frame(messages_frame)
+        undelivered_frame.grid(row=2, column=0, sticky="w", padx=5, pady=2)
         
-        see_label = tk.Label(undelivered_frame, text="See")
-        see_label.pack(side=tk.LEFT, padx=2)
-        
+        tk.Label(undelivered_frame, text="See").pack(side=tk.LEFT)
         self.num_messages_entry = tk.Entry(undelivered_frame, width=5)
         self.num_messages_entry.pack(side=tk.LEFT, padx=2)
-        
-        msg_label = tk.Label(undelivered_frame, text="undelivered messages")
-        msg_label.pack(side=tk.LEFT, padx=2)
-        
-        self.go_button = tk.Button(undelivered_frame, text="Go", command=self.load_undelivered_messages, state=tk.DISABLED)
+        tk.Label(undelivered_frame, text="undelivered messages").pack(side=tk.LEFT)
+        self.go_button = tk.Button(undelivered_frame, text="Go", command=self.load_undelivered_messages)
         self.go_button.pack(side=tk.LEFT, padx=2)
+        
+        # Messages list with scrollbar
+        messages_frame.grid_columnconfigure(0, weight=1)
+        messages_frame.grid_rowconfigure(3, weight=1)
+        
+        self.messages_listbox = tk.Listbox(
+            messages_frame,
+            selectmode=tk.EXTENDED,
+            exportselection=0
+        )
+        self.messages_listbox.grid(row=3, column=0, sticky="nsew", padx=5, pady=5)
+        
+        messages_scroll = tk.Scrollbar(messages_frame, command=self.messages_listbox.yview)
+        messages_scroll.grid(row=3, column=1, sticky="ns")
+        self.messages_listbox.config(yscrollcommand=messages_scroll.set)
+        
+        # Messages buttons
+        button_frame = tk.Frame(messages_frame)
+        button_frame.grid(row=4, column=0, columnspan=2, pady=5)
+        
+        tk.Button(button_frame, text="Load more", command=self.load_more_messages).pack(side=tk.LEFT, padx=2)
+        tk.Button(button_frame, text="Delete messages", command=self.delete_messages).pack(side=tk.LEFT, padx=2)
 
-        self.messages_listbox = tk.Listbox(self.messages_frame, selectmode=tk.MULTIPLE)
-        self.messages_listbox.pack(padx=10, pady=5, fill=tk.BOTH, expand=True)
-        # self.messages_listbox.bind('<<ListboxSelect>>', self.on_select)
+        # Middle column - Accounts list
+        accounts_frame = tk.Frame(self.chat_frame)
+        accounts_frame.grid(row=0, column=1, sticky="nsew", padx=5, pady=5)
+        accounts_frame.grid_columnconfigure(0, weight=1)
+        accounts_frame.grid_rowconfigure(2, weight=1)
+        
+        # Search bar
+        search_frame = tk.Frame(accounts_frame)
+        search_frame.grid(row=0, column=0, columnspan=2, sticky="ew", pady=5)
+        
+        self.search_bar = tk.Entry(search_frame)
+        self.search_bar.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(0, 5))
+        tk.Button(search_frame, text="Search", command=self.search_accounts).pack(side=tk.LEFT)
+        
+        # Delete account button
+        tk.Button(accounts_frame, text="Delete my account", command=self.create_confirm_delete_account_page, 
+                 fg="red").grid(row=1, column=0, pady=5)
+        
+        # Accounts list with scrollbar
+        self.accounts_listbox = tk.Listbox(accounts_frame, exportselection=0)
+        self.accounts_listbox.grid(row=2, column=0, sticky="nsew", padx=5)
+        self.accounts_listbox.bind('<<ListboxSelect>>', self.on_account_select)
+        
+        accounts_scroll = tk.Scrollbar(accounts_frame, command=self.accounts_listbox.yview)
+        accounts_scroll.grid(row=2, column=1, sticky="ns")
+        self.accounts_listbox.config(yscrollcommand=accounts_scroll.set)
+        
+        # Pagination
+        pagination_frame = tk.Frame(accounts_frame)
+        pagination_frame.grid(row=3, column=0, columnspan=2, pady=5)
+        
+        self.prev_button = tk.Button(pagination_frame, text="Prev", command=self.prev_page)
+        self.prev_button.pack(side=tk.LEFT, padx=2)
+        self.next_button = tk.Button(pagination_frame, text="Next", command=self.next_page)
+        self.next_button.pack(side=tk.LEFT, padx=2)
 
-        button_frame = tk.Frame(self.messages_frame)
-        button_frame.pack(pady=5)
-
-        self.load_more_button = tk.Button(button_frame, text="Load more", command=self.load_more_messages)
-        self.load_more_button.pack(side=tk.LEFT, padx=5)
-
-        self.delete_button = tk.Button(button_frame, text="Delete messages", command=self.delete_messages)
-        self.delete_button.pack(side=tk.LEFT, padx=5)
-
-        # Third column: Message display and input
-        self.message_display_frame = tk.Frame(self.chat_frame)
-        self.message_display_frame.grid(row=0, column=2, sticky="nsew")
-
-        self.message_display = scrolledtext.ScrolledText(self.message_display_frame, wrap=tk.WORD, width=50, height=20)
-        self.message_display.pack(padx=10, pady=10)
+        # Right column - Message display and input
+        chat_frame = tk.Frame(self.chat_frame)
+        chat_frame.grid(row=0, column=2, sticky="nsew", padx=5, pady=5)
+        chat_frame.grid_columnconfigure(0, weight=1)
+        chat_frame.grid_rowconfigure(0, weight=1)
+        
+        self.message_display = scrolledtext.ScrolledText(chat_frame, wrap=tk.WORD)
+        self.message_display.grid(row=0, column=0, columnspan=2, sticky="nsew", pady=(0, 5))
         self.message_display.config(state=tk.DISABLED)
-
-        self.entry = tk.Entry(self.message_display_frame, width=40)
-        self.entry.pack(side=tk.LEFT, padx=(10, 0))
-
-        self.send_button = tk.Button(self.message_display_frame, text="Send", command=self.send_message)
-        self.send_button.pack(side=tk.LEFT, padx=10)
-
-        # Configure grid weights
-        self.chat_frame.grid_columnconfigure(0, weight=1)
-        self.chat_frame.grid_columnconfigure(1, weight=1)
-        self.chat_frame.grid_columnconfigure(2, weight=1)
-        self.chat_frame.grid_rowconfigure(0, weight=1)
+        
+        self.entry = tk.Entry(chat_frame)
+        self.entry.grid(row=1, column=0, sticky="ew", padx=(0, 5))
+        
+        tk.Button(chat_frame, text="Send", command=self.send_message).grid(row=1, column=1)
 
         # Load initial data
         self.load_page_data()
@@ -302,26 +313,28 @@ class ClientGUI:
 
 
     def update_message_input_area(self):
-        logger.info(f"F {self.username}: Updating message input area")
-        self.message_display.config(state=tk.NORMAL)
-        self.message_display.delete(1.0, tk.END)
-        
+        """Update the message input area with the current chat."""
         if not self.selected_account:
-            self.message_display.config(state=tk.DISABLED)
             return
-
+            
+        response = self.client.load_private_chat(self.user_uuid, self.selected_account)
+        self.message_display.config(state=tk.NORMAL)
+        self.message_display.delete("1.0", tk.END)
+        
+        # Add header
         self.message_display.insert(tk.END, f"Your chat with {self.selected_account}\n\n\n")
         
-        # Request chat history
-        request = {
-            "action": "load_private_chat",
-            "content": {
-                "current_uuid": self.user_uuid,
-                "other_username": self.selected_account
-            }
-        }
-        self.thread_send(request)
+        # Add messages
+        for msg in response.messages:
+            if msg.status == chat_pb2.MessageStatus.PENDING and msg.recipient_username == self.username:
+                continue
+            self.message_display.insert(
+                tk.END, 
+                f"[{msg.timestamp}] {msg.sender_username}: {msg.message}\n"
+            )
+        
         self.message_display.config(state=tk.DISABLED)
+        self.message_display.see(tk.END)
 
     def update_accounts_list(self, accounts):
         self.accounts_listbox.delete(0, tk.END)
@@ -330,25 +343,33 @@ class ClientGUI:
             self.accounts_listbox.insert(tk.END, account[1])
 
     def update_messages_list(self, messages, total_undelivered):
-        logger.info(f"Updating messages list with {len(messages)} messages")
+        """Update the messages listbox with the given messages."""
         self.messages_listbox.delete(0, tk.END)
-        self.msgid_map.clear()  # Clear the previous mapping
-        for index, message in enumerate(messages):
-            sender = message[1]
-            recipient = message[2]
-            msg_content = message[3]
-            timestamp = message[4]
-            msgid = message[0]
+        self.msgid_map.clear()
+        
+        for i, msg in enumerate(messages):
+            msg_id = msg[0] if isinstance(msg, (list, tuple)) else msg.message_id
+            sender = msg[1] if isinstance(msg, (list, tuple)) else msg.sender_username
+            recipient = msg[2] if isinstance(msg, (list, tuple)) else msg.recipient_username
+            message = msg[3] if isinstance(msg, (list, tuple)) else msg.message
+            timestamp = msg[4] if isinstance(msg, (list, tuple)) else msg.timestamp
             
-            if recipient == self.username:
-                display_text = f"From {sender}: {msg_content}"
-                self.msgid_map[index] = msgid
-            else:
-                display_text = f"To {recipient}: {msg_content}"
-            
+            display_text = f"[{timestamp}] {sender} -> {recipient}: {message}"
             self.messages_listbox.insert(tk.END, display_text)
-        self.undelivered_label.config(text=f"Undelivered messages: {total_undelivered}")
-        self.go_button.config(state=tk.NORMAL if total_undelivered > 0 else tk.DISABLED)
+            self.msgid_map[i] = msg_id
+        
+        # Update undelivered count
+        self.num_undelivered = total_undelivered
+        if total_undelivered > 0:
+            self.undelivered_label.config(
+                text=f"You have {total_undelivered} undelivered messages"
+            )
+            self.go_button.config(state=tk.NORMAL)
+            self.num_messages_entry.config(state=tk.NORMAL)
+        else:
+            self.undelivered_label.config(text="No undelivered messages")
+            self.go_button.config(state=tk.DISABLED)
+            self.num_messages_entry.config(state=tk.DISABLED)
 
     
     # ===================================================================
@@ -356,21 +377,6 @@ class ClientGUI:
     # Network functions (send requests to server)
     # ===================================================================
     # ===================================================================
-
-    def thread_send(self, request, callback=None):
-        """Send a request to the server using a separate thread to reduce GUI lag.
-        
-        Args:
-            request: The request to send to the server
-            callback: Optional function to call after the request is processed
-        """
-        def send_with_callback():
-            self.client.send_request(request)
-            if callback:
-                self.master.after(100, callback)  # Schedule callback on main thread after 100ms
-                
-        thread = threading.Thread(target=send_with_callback)
-        thread.start()
 
     def check_username(self):
         logger.info(f"F {self.username}: Check username")
@@ -535,20 +541,28 @@ class ClientGUI:
 
     def handle_server_update(self, update):
         """Handle real-time updates from server."""
-        if update.HasField('new_message'):
-            msg = update.new_message
-            self.handle_new_message(msg)
-        elif update.HasField('account_update'):
-            self.handle_account_update(update.account_update)
-        elif update.HasField('message_deletion'):
-            self.handle_message_deletion(update.message_deletion)
+        def handle_on_main_thread():
+            if update.HasField('new_message'):
+                msg = update.new_message
+                self.handle_new_message(msg)
+            elif update.HasField('account_update'):
+                self.handle_account_update(update.account_update)
+            elif update.HasField('message_deletion'):
+                self.handle_message_deletion(update.message_deletion)
+
+        # Schedule update handling on the main thread
+        self.master.after(0, handle_on_main_thread)
 
     def handle_new_message(self, message):
         """Handle new message update."""
+        if (message.sender_username == self.selected_account or 
+            message.recipient_username == self.selected_account):
+            # Update the private chat view if we're currently viewing it
+            self.update_message_input_area()
+        
+        # Always update the messages list
         self.num_messages += 1
         self.load_messages()
-        if message.sender_username == self.selected_account:
-            self.update_message_input_area()
 
     def handle_account_update(self, update):
         """Handle account update."""

@@ -16,6 +16,7 @@ class ChatClient:
 
     def set_update_callback(self, callback):
         """Set callback function for handling server updates."""
+        logger.info(f"Setting callback function: {callback}")
         self.callback = callback
 
     def start_update_stream(self, uuid):
@@ -34,6 +35,7 @@ class ChatClient:
 
     def login(self, username, hashed_password):
         """Login to the server."""
+        logger.info(f"Logging in with username: {username} and hashed password: {hashed_password}")
         try:
             request = chat_pb2.LoginRequest(
                 username=username,
@@ -47,6 +49,7 @@ class ChatClient:
 
     def register(self, username, hashed_password):
         """Register a new user."""
+        logger.info(f"Registering with username: {username} and hashed password: {hashed_password}")
         try:
             request = chat_pb2.RegisterRequest(
                 username=username,
@@ -60,6 +63,7 @@ class ChatClient:
 
     def check_username(self, username):
         """Check if a username is available."""
+        logger.info(f"Checking username: {username}")
         try:
             request = chat_pb2.CheckUsernameRequest(username=username)
             response = self.stub.CheckUsername(request)
@@ -70,6 +74,7 @@ class ChatClient:
 
     def delete_account(self, uuid, hashed_password):
         """Delete user account."""
+        logger.info(f"Deleting account with uuid: {uuid} and hashed password: {hashed_password}")
         try:
             request = chat_pb2.DeleteAccountRequest(
                 uuid=uuid,
@@ -83,6 +88,7 @@ class ChatClient:
 
     def search_accounts(self, search_term, offset):
         """Search for user accounts."""
+        logger.info(f"Searching for accounts with search term: {search_term} and offset: {offset}")
         try:
             request = chat_pb2.SearchAccountsRequest(
                 search_term=search_term,
@@ -96,6 +102,7 @@ class ChatClient:
 
     def send_message(self, sender_uuid, recipient_username, message, timestamp):
         """Send a message to another user."""
+        logger.info(f"Sending message from {sender_uuid} to {recipient_username} with message: {message} and timestamp: {timestamp}")
         try:
             request = chat_pb2.SendMessageRequest(
                 sender_uuid=sender_uuid,
@@ -111,6 +118,7 @@ class ChatClient:
 
     def load_messages(self, uuid, num_messages):
         """Load messages for a user."""
+        logger.info(f"Loading {num_messages} messages for {uuid}")
         try:
             request = chat_pb2.LoadMessagesRequest(
                 uuid=uuid,
@@ -124,6 +132,7 @@ class ChatClient:
 
     def load_undelivered_messages(self, uuid, num_messages):
         """Load undelivered messages for a user."""
+        logger.info(f"Loading {num_messages} undelivered messages for {uuid}")
         try:
             request = chat_pb2.LoadUndeliveredRequest(
                 uuid=uuid,
@@ -137,6 +146,7 @@ class ChatClient:
 
     def delete_messages(self, message_ids, deleter_uuid):
         """Delete messages."""
+        logger.info(f"Deleting messages with ids: {message_ids} and deleter uuid: {deleter_uuid}")
         try:
             request = chat_pb2.DeleteMessagesRequest(
                 message_ids=message_ids,
@@ -150,6 +160,7 @@ class ChatClient:
 
     def load_private_chat(self, current_uuid, other_username):
         """Load private chat messages."""
+        logger.info(f"Loading private chat for {current_uuid} and {other_username}")
         try:
             request = chat_pb2.LoadPrivateChatRequest(
                 current_uuid=current_uuid,
@@ -163,4 +174,5 @@ class ChatClient:
 
     def close(self):
         """Close the gRPC channel."""
+        logger.info("Closing gRPC channel")
         self.channel.close() 

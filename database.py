@@ -241,12 +241,12 @@ class MessageDatabase:
             if conn:
                 conn.close()
 
-    def store_message(self, sender_uuid: int, recipient_username: str, message: str, status: bool, timestamp: str) -> Tuple[bool, str]:
+    def store_message(self, sender_uuid: int, recipient_username: str, message: str, status: bool, timestamp: str) -> Tuple[bool, str, Optional[int]]:
         """Store a message in the database."""
         try:
             conn = self.connect()
             if conn is None:
-                return False, "Database connection failed"
+                return False, "Database connection failed", None
 
             cursor = conn.cursor()
             
@@ -254,7 +254,7 @@ class MessageDatabase:
             cursor.execute("SELECT userid FROM users WHERE username = ?", (recipient_username,))
             recipient = cursor.fetchone()
             if not recipient:
-                return False, f"User {recipient_username} not found"
+                return False, f"User {recipient_username} not found", None
                 
             recipient_uuid = recipient[0]
             
@@ -264,12 +264,13 @@ class MessageDatabase:
                 VALUES (?, ?, ?, ?, ?)
             """, (sender_uuid, recipient_uuid, message, 'delivered' if status else 'pending', timestamp))
             
+            msg_id = cursor.lastrowid
             conn.commit()
-            return True, ""
+            return True, "", msg_id
             
         except sqlite3.Error as e:
             logger.error(f"Error storing message: {e}")
-            return False, str(e)
+            return False, str(e), None
         finally:
             if conn:
                 conn.close()
@@ -477,8 +478,8 @@ class MessageDatabase:
         accounts, total_count = self.search_accounts("", 0)
         return messages, num_pending, accounts, total_count
 
-    def delete_messages(self, msg_ids: List[int]) -> List[Tuple[int, int]]:
-        """Delete messages and return affected users with message counts."""
+    def delete_messages(self, msg_ids: List[int], deleter_uuid: int) -> List[Tuple[int, int]]:
+        """Delete messages where the deleter is the recipient and return affected users with message counts."""
         try:
             conn = self.connect()
             if conn is None:
@@ -486,31 +487,44 @@ class MessageDatabase:
 
             cursor = conn.cursor()
             
-            # First get affected users and their message counts
+            # First get the messages that the user is allowed to delete (where they are the recipient)
             placeholders = ','.join('?' * len(msg_ids))
             cursor.execute(f"""
-                SELECT 
-                    userid,
-                    COUNT(*) as msg_count
-                FROM (
-                    SELECT DISTINCT 
-                        CASE 
-                            WHEN senderuuid = userid THEN senderuuid 
-                            ELSE recipientuuid 
-                        END as userid
-                    FROM messages 
-                    CROSS JOIN users
-                    WHERE msgid IN ({placeholders})
-                ) t
-                GROUP BY userid
-            """, msg_ids)
+                SELECT msgid, senderuuid
+                FROM messages 
+                WHERE msgid IN ({placeholders})
+                AND recipientuuid = ?  -- Only where user is recipient
+            """, msg_ids + [deleter_uuid])
             
-            affected_users = [(row[0], row[1]) for row in cursor.fetchall()]
+            allowed_deletions = cursor.fetchall()
+            if not allowed_deletions:
+                return []
+                
+            # Get the message IDs that will be deleted
+            allowed_msg_ids = [msg[0] for msg in allowed_deletions]
+            # Get the affected senders
+            affected_senders = set(msg[1] for msg in allowed_deletions)
             
-            # Delete the messages
-            cursor.execute(f"DELETE FROM messages WHERE msgid IN ({placeholders})", msg_ids)
+            # Delete only the allowed messages
+            placeholders = ','.join('?' * len(allowed_msg_ids))
+            cursor.execute(f"""
+                DELETE FROM messages 
+                WHERE msgid IN ({placeholders})
+            """, allowed_msg_ids)
+            
+            # Count deleted messages per affected sender
+            affected_users = []
+            for sender_uuid in affected_senders:
+                cursor.execute("""
+                    SELECT COUNT(*)
+                    FROM messages
+                    WHERE (senderuuid = ? AND recipientuuid = ?)
+                       OR (senderuuid = ? AND recipientuuid = ?)
+                """, (sender_uuid, deleter_uuid, deleter_uuid, sender_uuid))
+                remaining_count = cursor.fetchone()[0]
+                affected_users.append((sender_uuid, remaining_count))
+            
             conn.commit()
-            
             return affected_users
             
         except sqlite3.Error as e:
