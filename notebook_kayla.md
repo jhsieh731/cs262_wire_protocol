@@ -124,3 +124,83 @@ There should be two existing users, "existing_user_1" and "existing_user_2", in 
 - Broadcast delete messages
 - Broadcast delete account
 - Load private chat
+
+## GRPC Analysis
+
+### Impact Analysis
+
+Advantages:
+    - Code Simplification
+        - Eliminates custom wire protocol code (~200 lines)
+        - Removes manual serialization/deserialization
+        - Built-in streaming support for real-time messages
+        - Automatic client stub generation
+    - Performance
+        - Protocol Buffers are more efficient than JSON
+        - Built-in message compression
+        - Connection multiplexing
+    - Development Experience
+        - Strong typing through .proto files
+        - Better IDE support
+        - Built-in error handling
+        - Automatic client/server code generation
+Disadvantages:
+    - Learning Curve
+        - New protocol buffer syntax
+        - Understanding gRPC concepts
+        - More complex setup
+    - Deployment
+        - Additional dependencies
+        - Proto file compilation step
+        - Less human-readable wire format
+    - Debugging
+        - More complex tooling needed
+        - Less transparent network traffic
+
+### Data Size Impact
+
+The Protocol Buffer format would likely reduce message sizes by:
+    - Using binary format instead of text
+    - Field numbers instead of names
+    - Efficient number encoding
+    - Built-in compression
+
+Example comparison:
+
+```bash
+JSON Message (Custom Protocol):
+{
+  "sender_uuid": "123e4567-e89b-12d3-a456-426614174000",
+  "content": "Hello world",
+  "timestamp": "2024-03-20T10:30:00Z"
+}
+~120 bytes
+```
+
+```bash
+Protocol Buffer equivalent:
+[field_number][wire_type][length][value]...
+~60-70 bytes
+```
+
+### Summary
+    - Easier/Harder:
+        - Easier for core functionality and scaling
+        - Harder initial setup and learning curve
+        - Much easier testing
+    - Code Size:
+        - Reduces custom protocol code significantly
+        - Adds proto file definitions
+        - Net reduction in code size
+    - Application Structure:
+        - More service-oriented architecture
+        - Cleaner separation of concerns
+        - Better type safety
+        - Built-in streaming support
+    - Testing:
+        - Built-in testing utilities
+        - Easier mocking
+        - More structured test cases
+        - Better error simulation
+
+The switch to gRPC would modernize the application and make it more maintainable, though with some initial complexity cost.
