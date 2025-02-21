@@ -541,17 +541,18 @@ class ClientGUI:
 
     def handle_server_update(self, update):
         """Handle real-time updates from server."""
-        def handle_on_main_thread():
-            if update.HasField('new_message'):
-                msg = update.new_message
-                self.handle_new_message(msg)
-            elif update.HasField('account_update'):
-                self.handle_account_update(update.account_update)
-            elif update.HasField('message_deletion'):
-                self.handle_message_deletion(update.message_deletion)
+        # def handle_on_main_thread():
+        print(f"Received update: {update}")
+        if update.HasField('new_message'):
+            msg = update.new_message
+            self.handle_new_message(msg)
+        elif update.HasField('account_update'):
+            self.handle_account_update(update.account_update)
+        elif update.HasField('message_deletion'):
+            self.handle_message_deletion(update.message_deletion)
 
-        # Schedule update handling on the main thread
-        self.master.after(0, handle_on_main_thread)
+        # # Schedule update handling on the main thread
+        # self.master.after(0, handle_on_main_thread)
 
     def handle_new_message(self, message):
         """Handle new message update."""

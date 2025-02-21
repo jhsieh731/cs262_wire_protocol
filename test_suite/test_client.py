@@ -5,7 +5,7 @@ import sys
 import tkinter as tk
 import client
 
-# to run: python3 -m pytest test_suite/test_client.py -v --cov=client --cov-report=term-missing
+# to run: python3 -m pytest test_suite/test_client.py -v
 
 class TestClient(unittest.TestCase):
     def setUp(self):

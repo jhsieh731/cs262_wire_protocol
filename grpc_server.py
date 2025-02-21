@@ -57,11 +57,17 @@ class ChatServicer(chat_pb2_grpc.ChatServiceServicer):
             
             # Delete messages first
             affected_users = self.db.delete_user_messages(request.uuid)
+
+
+            # get username
+            username = self.db.get_user_username(request.uuid)
             
             # Delete the account
-            if self.db.delete_user(request.uuid):
+            if username and self.db.delete_user(request.uuid):
                 # Notify other users about message deletions
                 self._notify_message_deletions(affected_users)
+                # Notify user about account deletion
+                self._notify_account_deletion(request.uuid, username)
                 return chat_pb2.DeleteAccountResponse(success=True)
             return chat_pb2.DeleteAccountResponse(success=False, error="Failed to delete account")
         except Exception as e:
@@ -178,8 +184,11 @@ class ChatServicer(chat_pb2_grpc.ChatServiceServicer):
             while context.is_active():
                 # Use time.sleep instead of context.sleep
                 time.sleep(1)
-                # Yield any pending updates
-                yield from context.pending_updates if hasattr(context, 'pending_updates') else []
+                # Yield any pending updates one by one and remove them from the list
+                if hasattr(context, 'pending_updates'):
+                    while context.pending_updates:
+                        update = context.pending_updates.pop(0)
+                        yield update
         except Exception as e:
             logger.error(f"Stream error: {e}")
         finally:
@@ -227,6 +236,27 @@ class ChatServicer(chat_pb2_grpc.ChatServiceServicer):
                         stream.send(update)
                     except Exception as e:
                         logger.error(f"Failed to send deletion update: {e}")
+
+    def _notify_account_deletion(self, uuid, username):
+        """Notify all users about account deletion."""
+        update = chat_pb2.UpdateResponse(
+            account_update=chat_pb2.AccountUpdate(
+                type=chat_pb2.UpdateType.ACCOUNT_REMOVED,
+                account=chat_pb2.Account(
+                    uuid=uuid,
+                    username=username
+                )
+            )
+        )
+
+        for user_uuid, streams in self.active_streams.items():
+            for stream in streams:
+                try:
+                    if not hasattr(stream, 'pending_updates'):
+                            stream.pending_updates = []
+                    stream.pending_updates.append(update)
+                except Exception as e:
+                    logger.error(f"Failed to send account deletion update: {e}")
 
     def _convert_to_message_proto(self, msg_dict):
         """Convert a message dictionary to a Message proto."""
