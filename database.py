@@ -5,7 +5,7 @@ from logger import set_logger
 logger = set_logger("db", "db.log")
 
 class MessageDatabase:
-    def __init__(self, db_file: str = "messages.db"):
+    def __init__(self, db_file):
         """Initialize the database connection."""
         self.db_file = db_file
         self.conn = None

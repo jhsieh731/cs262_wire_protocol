@@ -119,7 +119,26 @@ class RaftNode:
         conn, addr = lsock_client.accept()
         logger.info(f"Accepted client connection from {addr}")
         conn.setblocking(False)
+        # has_data = False # check if fail is from data read
+        # try:
+        #     data = conn.recv(1024)
+        #     if data:
+        #         has_data = True
+        #         message = json.loads(data.decode())
+        #         logger.info(f"FIND_LEADER {message}")
+        #         if message.get("type") == "find_leader":
+        #             response = json.dumps({"host": self.client_host, "port": self.client_port}).encode()
+        #             conn.sendall(response)
+        #             return  # Don't register this connection
+        # except Exception as e:
+        #     logger.error(f"Error handling find_leader request: {e}")
+        #         # conn.close()
+        #         # return
+
         message = Message(self.sel, conn, addr, accepted_versions, protocol, self.db, self.broadcast)
+        # if has_data:
+        #     message._recv_buffer += data
+        # self._recv_buffer += data # add back read data
         self.sel.register(conn, selectors.EVENT_READ, data=message)
 
 
@@ -148,12 +167,26 @@ class RaftNode:
         try:
             while self.raft_socket_running:
                 events = self.sel.select(timeout=None)
+                logger.info(f"events: {events}")
                 for key, mask in events:
                     if key.data is None:
                         self.accept_client_connections(key.fileobj, accepted_versions, protocol)
                     else:
                         message = key.data
                         logger.info(f"Message: {message}")
+                        # data = message.sock.recv(1024)
+                        # if data:
+                        #     try:
+                        #         message = json.loads(data.decode())
+                        #         logger.info(f"Message: {message}")
+                        #         if message.get("type") == "find_leader":
+                        #             response = json.dumps({"host": self.client_host, "port": self.client_port}).encode()
+                        #             message.sock.sendall(response)
+                        #             continue
+                        #     except Exception as e:
+                        #         logger.info("did not parse json, adding back to buffer")
+                        #         message._recv_buffer += data
+
                         try:
                             message.process_events(mask)
                         except Exception as e:
@@ -194,6 +227,7 @@ class RaftNode:
         """Send a message to all peers."""
         if message["type"] == "db_update":
             message["commit_index"] = self.last_applied + 1
+            self.last_applied += 1
         for peer in self.peers:
             self.send_message(peer["host"], peer["port"], message)
 
@@ -269,43 +303,46 @@ class RaftNode:
                 self.votes_received += 1
         elif message["type"] == "db_update":
             commit_index = message["commit_index"]
+            logger.info(f"commit_index: {commit_index}, last_applied: {self.last_applied}")
             if commit_index > self.last_applied:
                 action = message.get("action", None)
+                content = message.get("content", None)
                 if action == "login":
-                    username = message.get("username", None)
-                    password = message.get("password", None)
-                    addr = message.get("addr", None)
+                    username = content.get("username", None)
+                    password = content.get("password", None)
+                    addr = content.get("addr", None)
                     self.db.login(username, password, addr)
+                    logger.info(f"login: {username}, {password}, {addr}")
                     self.last_applied = commit_index
                 elif action == "register":
-                    username = message.get("username", None)
-                    password = message.get("password", None)
-                    addr = message.get("addr", None)
+                    username = content.get("username", None)
+                    password = content.get("password", None)
+                    addr = content.get("addr", None)
                     self.db.register(username, password, addr)
                     self.last_applied = commit_index
                 elif action == "store_message":
-                    sender_uuid = message.get("sender_uuid", None)
-                    recipient_uuid = message.get("recipient_uuid", None)
-                    msg = message.get("message", None)
-                    status = message.get("status", None)
-                    timestamp = message.get("timestamp", None)
+                    sender_uuid = content.get("uuid", None)
+                    recipient_uuid = content.get("recipient_uuid", None)
+                    msg = content.get("message", None)
+                    status = content.get("status", None)
+                    timestamp = content.get("timestamp", None)
                     self.db.store_message(sender_uuid, recipient_uuid, msg, status, timestamp)
                     self.last_applied = commit_index
                 elif action == "load_undelivered":
-                    uuid = message.get("uuid", None)
-                    num_messages = message.get("num_messages", None)
+                    uuid = content.get("uuid", None)
+                    num_messages = content.get("num_messages", None)
                     self.db.load_undelivered(uuid, num_messages)
                     self.last_applied = commit_index
                 elif action == "delete_messages":
-                    msg_ids = message.get("msg_ids", None)
+                    msg_ids = content.get("msg_ids", None)
                     self.db.delete_messages(msg_ids)
                     self.last_applied = commit_index
                 elif action == "delete_user":
-                    uuid = message.get("uuid", None)
+                    uuid = content.get("uuid", None)
                     self.db.delete_user(uuid)
                     self.last_applied = commit_index
                 elif action == "delete_user_messages":
-                    uuid = message.get("uuid", None)
+                    uuid = content.get("uuid", None)
                     self.db.delete_user_messages(uuid)
                     self.last_applied = commit_index
 

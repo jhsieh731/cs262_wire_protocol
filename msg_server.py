@@ -355,7 +355,7 @@ class Message:
                         "recipient_uuid": recipient_uuid,
                         "message": message_text,
                         "status": status,
-                        "timesamp": timestamp
+                        "timestamp": timestamp
                     }
                 })
                     
