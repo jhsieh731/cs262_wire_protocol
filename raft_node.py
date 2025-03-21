@@ -77,17 +77,19 @@ class RaftNode:
     def handle_peer_connection(self, client_socket):
         """Handle messages from a connected client"""
         try:
-            while self.raft_socket_running:
-                data = client_socket.recv(1024)
-                if not data:
-                    break
+            data = client_socket.recv(1024)
+            logger.info(f"Received raw data: {data!r}")
+            if not data:
+                logger.info("No data received; closing connection.")
+                return
+            message = json.loads(data.decode())
+            logger.info(f"Decoded message: {message}")
+            
+            # Forward all messages (including "find_leader") to the common handler.
+            self.process_peer_message(message)
                 
-                # Process the received message
-                message = json.loads(data.decode())
-                self.process_peer_message(message)
         except Exception as e:
-            if self.raft_socket_running:
-                self.logger.error(f"Error handling client: {e}")
+            logger.error(f"Error handling peer connection: {e}")
         finally:
             client_socket.close()
 
@@ -119,21 +121,22 @@ class RaftNode:
         conn, addr = lsock_client.accept()
         logger.info(f"Accepted client connection from {addr}")
         conn.setblocking(False)
-        # has_data = False # check if fail is from data read
-        # try:
-        #     data = conn.recv(1024)
-        #     if data:
-        #         has_data = True
-        #         message = json.loads(data.decode())
-        #         logger.info(f"FIND_LEADER {message}")
-        #         if message.get("type") == "find_leader":
-        #             response = json.dumps({"host": self.client_host, "port": self.client_port}).encode()
-        #             conn.sendall(response)
-        #             return  # Don't register this connection
-        # except Exception as e:
-        #     logger.error(f"Error handling find_leader request: {e}")
-        #         # conn.close()
-        #         # return
+        try:
+            data = conn.recv(1024)
+            if data:
+                logger.info(f"Received data from {addr}: {data.decode()}")
+                try:
+                    message = json.loads(data.decode())
+                    if message.get("type") == "find_leader":
+                        logger.info(f"Received find_leader request from {addr}")
+                        # In Option B, we expect the client to receive responses asynchronously.
+                        # Therefore, we can simply close this connection.
+                        conn.close()
+                        return
+                except Exception as e:
+                    logger.error(f"Error processing find_leader message: {e}")
+        except Exception as e:
+            logger.error(f"Error reading from client socket: {e}")
 
         message = Message(self.sel, conn, addr, accepted_versions, protocol, self.db, self.broadcast)
         # if has_data:
@@ -285,6 +288,22 @@ class RaftNode:
             self.last_heartbeat = time.time()
             self.leader_id = message["leader_id"]
             self.state = "follower"
+        elif message["type"] == "find_leader":
+            if self.state == "leader":
+                response = {
+                    "type": "find_leader_response",
+                    "host": self.client_host,   # Use the client server's host
+                    "port": self.client_port,   # Use the client server's port
+                    "node_id": self.node_id
+                }
+            else:
+                response = {
+                    "type": "find_leader_response",
+                    "host": None,
+                    "port": None,
+                    "node_id": self.node_id
+                }
+            self.send_message(message["host"], message["port"], response)
         elif message["type"] == "vote_request":
             if message["term"] > self.current_term and self.voted_for is None:
                 self.current_term = message["term"]

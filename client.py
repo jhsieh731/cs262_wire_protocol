@@ -1,173 +1,10 @@
-# import sys
-# import socket
-# import selectors
-# import json
-# import tkinter as tk
-# import threading
-# import msg_client
-# from gui import ClientGUI
-# from logger import set_logger
-
-# logger = set_logger("client", "client.log")
-
-# # Networking Setup
-# sel = None
-# host = None
-# port = None
-# protocol = None
-# # leader = None  # Stores (leader_host, leader_port)
-
-
-# def initialize_client(server_host, server_port, input_protocol):
-#     """Initialize the client with the given host and port."""
-#     global sel, host, port, protocol
-#     sel = selectors.DefaultSelector()
-#     host = server_host
-#     port = server_port
-#     protocol = input_protocol
-#     return sel
-
-
-# # def find_leader():
-# #     """Query cluster nodes to find the current leader."""
-# #     global leader
-# #     cluster_nodes = [(host, port)]  # Could add other known nodes
-
-# #     for node in cluster_nodes:
-# #         try:
-# #             logger.info(f"Client: Sending find_leader to {node}")
-# #             response = send_direct_request(node, {"type": "find_leader"})
-# #             if response:
-# #                 leader = (response["host"], response["port"])
-# #                 logger.info(f"Client: Found leader at {leader}")
-# #                 return leader
-# #         except Exception as e:
-# #             logger.error(f"Error contacting node {node}: {e}")
-    
-# #     logger.error("Client: Could not determine leader. Retrying...")
-# #     return None
-
-
-# # def send_direct_request(node, request):
-# #     """Send a JSON request directly to a Raft node."""
-# #     try:
-# #         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-# #             sock.connect(node)
-# #             sock.sendall(json.dumps(request).encode())
-# #             data = sock.recv(1024)
-# #             return json.loads(data.decode())
-# #     except Exception as e:
-# #         logger.error(f"Error contacting {node}: {e}")
-# #         return None
-
-# def send_to_server(request):
-#     """Send a request to the leader."""
-#     global leader
-#     if sel is None:
-#         logger.error("Client not initialized. Call initialize_client first.")
-#         return
-
-#     # Ensure we have a leader
-#     # if not leader:
-#     #     leader = find_leader()
-#     #     if not leader:
-#     #         logger.error("Client: No leader available, request failed.")
-#     #         return
-#     #     # Start network_thread in a separate thread so it doesn't block the main (GUI) thread.
-#     #     threading.Thread(target=network_thread, args=(request,), daemon=True).start()
-#     #     return
-
-#     try:
-#         for key in list(sel.get_map().values()):
-#             msg_obj = key.data  # This is the Message instance
-
-#             # Set the request and queue it
-#             msg_obj.request = request
-#             msg_obj.queue_request()          # Queue the message for sending
-
-#             # Set selector to listen for write events
-#             msg_obj._set_selector_events_mask("w")
-#     except Exception as e:
-#         logger.error(f"Error sending to server: {e}")
-
-
-# def network_thread(request):
-#     """Handles sending requests and maintaining communication."""
-#     logger.info(request)
-#     start_connection(gui, request)
-#     try:
-#         while True:
-#             events = sel.select(timeout=1)
-#             for key, mask in events:
-#                 message = key.data
-#                 try:
-#                     message.process_events(mask)
-#                 except Exception:
-#                     logger.info(f"Main: Error: Exception for {message.addr}")
-#                     message.close()
-#             # The thread continues running as a daemon thread
-#     except KeyboardInterrupt:
-#         logger.info("Caught keyboard interrupt, exiting")
-#     finally:
-#         logger.info("Network thread finished")
-
-# # GUI Setup
-# root = tk.Tk()
-# gui = ClientGUI(root, send_to_server, network_thread)
-
-
-# # Networking Functions
-# def start_connection(gui, request):
-#     """Start a connection to the leader."""
-#     global host, port, protocol
-#     # global leader
-#     # if not leader:
-#     #     leader = find_leader()
-#     #     if not leader:
-#     #         logger.error("Client: No leader available, cannot start connection.")
-#     #         return
-    
-#     addr = (host, port)
-#     logger.info(f"Starting connection to leader at {addr}")
-#     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-#     sock.setblocking(False)
-#     sock.connect_ex(addr)
-#     events = selectors.EVENT_READ | selectors.EVENT_WRITE
-#     message = msg_client.Message(sel, sock, addr, gui, request, protocol)
-#     sel.register(sock, events, data=message)
-
-
-# def main():
-#     """Entry point for client application."""
-#     if len(sys.argv) != 4:
-#         logger.info(f"Usage: {sys.argv[0]} <host> <port> <protocol>")
-#         sys.exit(1)
-    
-#     server_host = sys.argv[1]
-#     input_protocol = sys.argv[3]
-#     server_port = None
-    
-#     try:
-#         server_port = int(sys.argv[2])
-#     except ValueError:
-#         logger.info(f"Error: Port must be a number")
-#         sys.exit(1)
-    
-#     # Initialize client
-#     if server_port is not None:
-#         initialize_client(server_host, server_port, input_protocol)
-#         # find_leader()  # Find the leader before starting GUI
-#         root.mainloop()
-
-
-# if __name__ == '__main__':
-#     main()
-
-
 import sys
 import socket
 import selectors
 import tkinter as tk
+import threading
+import json
+import queue
 import msg_client
 from gui import ClientGUI
 from logger import set_logger
@@ -176,42 +13,114 @@ logger = set_logger("client", "client.log")
 
 # Networking Setup
 sel = None
-host = None
-port = None
 protocol = None
 
-def initialize_client(server_host, server_port, input_protocol):
-    """Initialize the client with the given host and port."""
-    global sel, host, port, protocol
+# These specify the client's listening address for receiving asynchronous responses.
+client_listen_host = "127.0.0.1"
+client_listen_port = 60000
+
+# A queue to store leader responses received from raft nodes.
+leader_response_queue = queue.Queue()
+
+
+def initialize_client(input_protocol):
+    global sel, protocol
     sel = selectors.DefaultSelector()
-    host = server_host
-    port = server_port
     protocol = input_protocol
     return sel
 
-# Send message to the server
+
+def leader_response_listener():
+    """
+    Runs as a separate thread.
+    Listens on (client_listen_host, client_listen_port) for find_leader responses.
+    """
+    listener_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    listener_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    listener_socket.bind((client_listen_host, client_listen_port))
+    listener_socket.listen(5)
+    logger.info(f"Client leader response listener running on {(client_listen_host, client_listen_port)}")
+    while True:
+        try:
+            conn, addr = listener_socket.accept()
+            data = conn.recv(1024)
+            if data:
+                response = json.loads(data.decode('utf-8'))
+                logger.info(f"Leader response received from {addr}: {response}")
+                # Put the response into the queue.
+                leader_response_queue.put(response)
+            conn.close()
+        except Exception as e:
+            logger.error(f"Error in leader response listener: {e}")
+
+
+def find_leader():
+    with open('config.json', 'r') as f:
+        config = json.load(f)
+    raft_nodes = config.get("raft_nodes", {})
+    num_nodes = len(raft_nodes)
+    
+    # Send a find_leader request (including client's address) to every raft node.
+    for node_id, node_info in raft_nodes.items():
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.settimeout(2)
+            s.connect((node_info["host"], node_info["port"]))
+            request = json.dumps({
+                "type": "find_leader",
+                "host": client_listen_host,
+                "port": client_listen_port
+            }).encode('utf-8')
+            s.sendall(request)
+            logger.info(f"Sent find_leader request to node {node_id}: {request!r}")
+            s.close()
+        except Exception as e:
+            logger.error(f"Error contacting raft node {node_id} for leader info: {e}")
+    
+    responses = []
+    # Wait for responses from all raft nodes (or until timeout for each)
+    for _ in range(num_nodes):
+        try:
+            # Adjust timeout as needed; here we wait up to 3 seconds per response.
+            response = leader_response_queue.get(timeout=3)
+            logger.info(f"Leader response received: {response}")
+            responses.append(response)
+        except Exception as e:
+            logger.error(f"Timeout waiting for a leader response: {e}")
+            break
+
+    # Check all collected responses for a valid leader.
+    for resp in responses:
+        if (resp.get("type") == "find_leader_response" and
+            resp.get("host") is not None and
+            resp.get("port") is not None):
+            logger.info(f"Using leader response: {resp}")
+            return resp["host"], resp["port"]
+
+    logger.error("No leader found among raft nodes.")
+    return None, None
+
 def send_to_server(request):
-    if sel is None:
-        logger.error("Client not initialized. Call initialize_client first.")
+    leader_host, leader_port = find_leader()
+    if not leader_host:
+        logger.error("No leader found. Request aborted.")
         return
-        
-    try:
-        for key in list(sel.get_map().values()):
-            msg_obj = key.data  # This is the Message instance
-            
-            # Set the request and queue it
-            msg_obj.request = request
-            msg_obj.queue_request()          # Queue the message for sending
-            
-            # # Set selector to listen for write events
-            msg_obj._set_selector_events_mask("w")
-    except Exception as e:
-        logger.error(f"Error sending to server: {e}")
+
+    logger.info(f"Starting connection to leader at {(leader_host, leader_port)}")
+    logger.info(f"Request: {request}")
+    
+    # Open a new connection to the leader using the already-defined start_connection function.
+    start_connection(gui, request, leader_host, leader_port)
 
 # Thread for handling server communication
 def network_thread(request):
     logger.info(request)
-    start_connection(gui, request)
+    leader_host, leader_port = find_leader()
+    if not leader_host:
+        logger.error("No leader found. Request aborted.")
+        return
+
+    start_connection(gui, request, leader_host, leader_port)
     try:
         while True:
             events = sel.select(timeout=1)
@@ -220,17 +129,14 @@ def network_thread(request):
                 try:
                     message.process_events(mask)
                 except Exception:
-                    logger.info(
-                        f"Main: Error: Exception for {message.addr}"
-                    )
+                    logger.info(f"Main: Error: Exception for {message.addr}")
                     message.close()
-            # Check for a socket being monitored to continue.
             if not sel.get_map():
                 break
     except KeyboardInterrupt:
         logger.info("Caught keyboard interrupt, exiting")
     finally:
-        logger.info("selectors closed")
+        logger.info("Selectors closed")
         sel.close()
 
 
@@ -238,38 +144,31 @@ def network_thread(request):
 root = tk.Tk()
 gui = ClientGUI(root, send_to_server, network_thread)
 
-# Networking Functions
-def start_connection(gui, request):
-    addr = (host, port)
-    logger.info(f"Starting connection to {addr}")
+
+# Networking Functions: Start a connection to the leader
+def start_connection(gui, request, host, port):
+    logger.info(f"Starting connection to leader at {(host, port)}")
+    print(f"Starting connection to leader at {(host, port)}")
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.setblocking(False)
-    sock.connect_ex(addr)
+    sock.connect_ex((host, port))
     events = selectors.EVENT_READ | selectors.EVENT_WRITE
-    message = msg_client.Message(sel, sock, addr, gui, request, protocol)
+    message = msg_client.Message(sel, sock, (host, port), gui, request, protocol)
     sel.register(sock, events, data=message)
 
 
 def main():
-    if len(sys.argv) != 4:
-        logger.info(f"Usage: {sys.argv[0]} <host> <port> <protocol>")
+    if len(sys.argv) != 2:
+        logger.info(f"Usage: {sys.argv[0]} <protocol>")
         sys.exit(1)
-    
-    server_host = sys.argv[1]
-    input_protocol = sys.argv[3]
-    server_port = None
-    
-    try:
-        server_port = int(sys.argv[2])
-    except ValueError:
-        logger.info(f"Error: Port must be a number")
-        sys.exit(1)
-    
-    # Initialize client
-    if server_port is not None:
-        initialize_client(server_host, server_port, input_protocol)
-        # Run the Tkinter main loop
-        root.mainloop()
+
+    input_protocol = sys.argv[1]
+    initialize_client(input_protocol)
+    # Start the leader response listener thread
+    listener_thread = threading.Thread(target=leader_response_listener, daemon=True)
+    listener_thread.start()
+    # Start the GUI main loop (which will trigger send_to_server as needed)
+    root.mainloop()
 
 if __name__ == '__main__':
     main()
