@@ -20,7 +20,7 @@ class RaftNode:
         self.peer_sockets = {}  # Mapping: (host, port) -> socket
         self.raft_host = nodes[node_id]["host"]
         self.raft_port = nodes[node_id]["port"]
-        self.db = MessageDatabase()
+        self.db = MessageDatabase(db_file=f"db_{node_id}.db")
 
         self.client_host = client_host
         self.client_port = client_port
@@ -143,14 +143,17 @@ class RaftNode:
         self.peer_status_thread = threading.Thread(target=self.monitor_peer_status, daemon=True)
         self.peer_status_thread.start()
 
+        self.last_heartbeat = time.time()
+
         try:
-            while True:
+            while self.raft_socket_running:
                 events = self.sel.select(timeout=None)
                 for key, mask in events:
                     if key.data is None:
                         self.accept_client_connections(key.fileobj, accepted_versions, protocol)
                     else:
                         message = key.data
+                        logger.info(f"Message: {message}")
                         try:
                             message.process_events(mask)
                         except Exception as e:
@@ -160,16 +163,17 @@ class RaftNode:
             logger.info(f"\nError in server: {e}")
         except KeyboardInterrupt:
             logger.info("\nCaught keyboard interrupt, shutting down...")
-            # safely close the server
-            self.stop()
-
         finally:
             logger.info("Closing all connections...")
+            # self.election_thread.join()
+            # self.election_thread.join()
             # Close all open sockets
             for key in list(self.sel.get_map().values()):
                 self.sel.unregister(key.fileobj)
                 key.fileobj.close()
             self.sel.close()
+            self.raft_socket.close()
+            self.raft_socket_running = False
 
     # --- Sending and Broadcasting ---
     def send_message(self, peer_host, peer_port, message):
@@ -179,7 +183,7 @@ class RaftNode:
             client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             client_socket.connect((peer_host, peer_port))
             client_socket.sendall(json.dumps(message, ensure_ascii=False).encode('utf-8'))
-            logger.info("message: ", message)
+            logger.info(f"message: {message}")
         except Exception as e:
             logger.info(f"Error sending message to port {peer_port}: {e}")
         finally:
@@ -216,7 +220,7 @@ class RaftNode:
             "term": self.current_term,
             "candidate_id": self.node_id
         }
-        logger.info("election message:", election_msg)
+        logger.info(f"election message: {election_msg}")
         self.broadcast(election_msg)
 
         start_time = time.time()
