@@ -8,10 +8,10 @@ from logger import set_logger
 
 logger = set_logger("msg_server", "msg_server.log")
 
-db = MessageDatabase()
+# db = MessageDatabase()
 
 class Message:
-    def __init__(self, selector, sock, addr, accepted_versions, protocol):
+    def __init__(self, selector, sock, addr, accepted_versions, protocol, db, peer_broadcast_fn):
         self.selector = selector
         self.sock = sock
         self.addr = addr
@@ -24,6 +24,8 @@ class Message:
         self.protocol_mode = protocol
         self.custom_protocol = CustomProtocol()
         self.accepted_versions = accepted_versions
+        self.db = db
+        self.peer_broadcast_fn = peer_broadcast_fn
 
         # validate protocol_mode: if unknown protocol, do not assume
         if self.protocol_mode not in ["json", "custom"]:
@@ -180,7 +182,17 @@ class Message:
         # Create response content and encode it
         if self.header["action"] == "login":
             # try to login
-            accounts = db.login(request_content.get("username"), request_content.get("password"), str(self.addr))
+            accounts = self.db.login(request_content.get("username"), request_content.get("password"), str(self.addr))
+            # notify replicas to update stores
+            self.peer_broadcast_fn({
+                "type": "db_update",
+                "action": "login",
+                "content": {
+                    "username": request_content.get("username"),
+                    "password": request_content.get("password"),
+                    "addr": str(self.addr)
+                }
+            })
             logger.info(f"Account lookup result: {accounts}")
             if (len(accounts) != 1):
                 response_content = {
@@ -195,7 +207,7 @@ class Message:
 
         elif self.header["action"] == "check_username":
             username = request_content.get("username")
-            is_in_use, success_status = db.check_username(username)
+            is_in_use, success_status = self.db.check_username(username)
             if not success_status:
                 response_content = {
                     "message": "An error occurred. Please try again."
@@ -210,7 +222,16 @@ class Message:
         elif self.header["action"] == "register":
             username = request_content.get("username")
             password = request_content.get("password")
-            uuid, error_msg = db.register(username, password, str(self.addr))
+            uuid, error_msg = self.db.register(username, password, str(self.addr))
+            self.peer_broadcast_fn({
+                "type": "db_update",
+                "action": "register",
+                "content": {
+                    "username": username,
+                    "password": password,
+                    "addr": str(self.addr)
+                }
+            })
             if error_msg:
                 response_content = {
                     "error": error_msg,
@@ -244,7 +265,7 @@ class Message:
             user_uuid = request_content.get("uuid")
 
             # Load page data
-            messages, num_pending, accounts, total_count = db.load_page_data(user_uuid)
+            messages, num_pending, accounts, total_count = self.db.load_page_data(user_uuid)
             logger.info(f"Loaded page data from db")
             
             response_content = {
@@ -260,7 +281,7 @@ class Message:
             offset = request_content.get("offset", 0)
             
             # Search for accounts with pagination
-            accounts, total_count = db.search_accounts(search_term, offset)
+            accounts, total_count = self.db.search_accounts(search_term, offset)
             logger.info(f"Found {len(accounts)} accounts (total: {total_count})")
             
             response_content = {
@@ -273,7 +294,7 @@ class Message:
             num_messages = request_content.get("num_messages")
             logger.info(f"Loading messages for user {user_uuid} and num_messages {num_messages}")
             
-            messages, total_undelivered = db.load_messages(user_uuid, num_messages)
+            messages, total_undelivered = self.db.load_messages(user_uuid, num_messages)
             logger.info(f"Found {len(messages)} messages (total: {total_undelivered})")
             
             response_content = {
@@ -291,11 +312,11 @@ class Message:
             logger.info(f"Message details - Sender: {sender_uuid}, Recipient: {recipient_username}, Message: {message_text}, Time: {timestamp}")
             
             # Get recipient's UUID
-            success_status, error_msg, recipient_uuid = db.get_user_uuid(recipient_username)
+            success_status, error_msg, recipient_uuid = self.db.get_user_uuid(recipient_username)
             if success_status:
                 # Get recipient's associated socket
-                recipient_socket = db.get_associated_socket(recipient_uuid)
-                sender_username = db.get_user_username(sender_uuid)
+                recipient_socket = self.db.get_associated_socket(recipient_uuid)
+                sender_username = self.db.get_user_username(sender_uuid)
                 logger.info(sender_username)
                 
                 # ensure all fields are there
@@ -325,7 +346,18 @@ class Message:
                     status = self._unicast(recipient_socket, relay_message)
 
                 # Store the message
-                success_status, error_msg = db.store_message(sender_uuid, recipient_uuid, message_text, status, timestamp)
+                success_status, error_msg = self.db.store_message(sender_uuid, recipient_uuid, message_text, status, timestamp)
+                self.peer_broadcast_fn({
+                    "type": "db_update",
+                    "action": "store_message",
+                    "content": {
+                        "uuid": sender_uuid,
+                        "recipient_uuid": recipient_uuid,
+                        "message": message_text,
+                        "status": status,
+                        "timesamp": timestamp
+                    }
+                })
                     
             # Create response for sender
             response_content = {
@@ -339,7 +371,15 @@ class Message:
             logger.info(f"Loading undelivered messages for user {user_uuid}")
             
             # Load undelivered messages from db
-            messages = db.load_undelivered(user_uuid, num_messages)
+            messages = self.db.load_undelivered(user_uuid, num_messages)
+            self.peer_broadcast_fn({
+                "type": "db_update",
+                "action": "load_undelivered",
+                "content": {
+                    "uuid": user_uuid,
+                    "num_messages": num_messages
+                }
+            })
             logger.info(f"Found {len(messages)} undelivered messages")
             
             response_content = {
@@ -351,7 +391,14 @@ class Message:
             logger.info(f"msg_ids: {msg_ids}")
             deleter_uuid = request_content.get("deleter_uuid", None)
             logger.info(f"deleter_uuid: {deleter_uuid}")
-            delete_messages_result = db.delete_messages(msg_ids)
+            delete_messages_result = self.db.delete_messages(msg_ids)
+            self.peer_broadcast_fn({
+                "type": "db_update",
+                "action": "delete_messages",
+                "content": {
+                    "msg_ids": msg_ids,
+                }
+            })
             logger.info(f"delete_messages_result: {delete_messages_result}")
             deleter_num_messages = 0
 
@@ -360,7 +407,7 @@ class Message:
                     deleter_num_messages = num_deleted
                     continue
                 # Get recipient's associated socket
-                recipient_socket = db.get_associated_socket(uuid)
+                recipient_socket = self.db.get_associated_socket(uuid)
                 logger.info(f"recipient_socket: {recipient_socket}")
                 
                 # ensure all fields are there
@@ -393,22 +440,36 @@ class Message:
             password = request_content.get("password")
             
             # Get the stored password from database
-            stored_password = db.get_user_password(user_uuid)
+            stored_password = self.db.get_user_password(user_uuid)
             logger.info(f"Retrieved stored password: {'Found' if stored_password else 'Not found'}")
             success = False
             error_message = ""
             if stored_password == password:
                 logger.info("Passwords match")
-                if db.delete_user(user_uuid):
+                if self.db.delete_user(user_uuid):
+                    self.peer_broadcast_fn({
+                        "type": "db_update",
+                        "action": "delete_user",
+                        "content": {
+                            "uuid": user_uuid,
+                        }
+                    })
                     logger.info("User deleted")
                     success = True
                     # First delete all messages and notify affected users
-                    message_counts = db.delete_user_messages(user_uuid)
+                    message_counts = self.db.delete_user_messages(user_uuid)
+                    self.peer_broadcast_fn({
+                        "type": "db_update",
+                        "action": "delete_user_messages",
+                        "content": {
+                            "uuid": user_uuid,
+                        }
+                    })
                     
                     # Notify each affected user about their deleted messages
                     for affected_uuid, num_deleted in message_counts:
                         if affected_uuid != user_uuid:  # Don't notify the user being deleted
-                            recipient_socket = db.get_associated_socket(affected_uuid)
+                            recipient_socket = self.db.get_associated_socket(affected_uuid)
                             if recipient_socket:
                                 notify_content = {"total_count": num_deleted,
                                                  "success": success,
@@ -440,7 +501,7 @@ class Message:
             current_uuid = request_content.get("current_uuid")
             other_username = request_content.get("other_username")
             
-            messages = db.load_private_chat(current_uuid, other_username)
+            messages = self.db.load_private_chat(current_uuid, other_username)
             response_content = {
                 "messages": messages
             }
