@@ -32,7 +32,7 @@ class RaftNode:
 
         self.state = "follower"  # "follower", "candidate", "leader"
         self.leader_id = None
-        self.election_timeout = random.uniform(5, 10)
+        self.election_timeout = random.uniform(3, 6)
         self.last_heartbeat = time.time()
 
         
@@ -242,6 +242,8 @@ class RaftNode:
             time.sleep(1)
             logger.info(str(time.time() - self.last_heartbeat) + "timeout: " + str(self.election_timeout))
             if self.state != "leader" and time.time() - self.last_heartbeat > self.election_timeout:
+                self.election_timeout = random.uniform(5, 10)
+                self.voted_for = None
                 logger.info(f"Node {self.node_id} timed out. Starting election.")
                 self.start_election()
 
@@ -262,13 +264,16 @@ class RaftNode:
 
         start_time = time.time()
         while time.time() - start_time < 2:
-            if self.votes_received > len(self.peers) // 2:
+            if self.votes_received >= 3:  # Majority votes
                 self.state = "leader"
                 self.leader_id = self.node_id
                 logger.info(f"Node {self.node_id} is now the leader!")
                 self.send_heartbeat()
                 return
             time.sleep(0.5)
+        
+        self.state = "follower"
+        self.last_heartbeat = time.time()
 
     def send_heartbeat(self):
         """Send heartbeat messages while the node is the leader."""
@@ -285,6 +290,11 @@ class RaftNode:
         """Process an incoming Raft message from a peer."""
         logger.info(f"Node {self.node_id} received message: {message}")
         if message["type"] == "heartbeat":
+            # Reset voted_for if we see a new term
+            if message["term"] > self.current_term:
+                self.current_term = message["term"]
+                self.voted_for = None
+            
             self.last_heartbeat = time.time()
             self.leader_id = message["leader_id"]
             self.state = "follower"
@@ -301,12 +311,21 @@ class RaftNode:
                     "type": "find_leader_response",
                     "host": None,
                     "port": None,
-                    "node_id": self.node_id
+                    "node_id": self.leader_id
                 }
             self.send_message(message["host"], message["port"], response)
         elif message["type"] == "vote_request":
-            if message["term"] > self.current_term and self.voted_for is None:
-                self.current_term = message["term"]
+            # Only vote if the candidate's term is at least as high as our current term
+            # and we haven't voted yet in this term or we already voted for this candidate
+            if (message["term"] > self.current_term) or \
+                (message["term"] == self.current_term and 
+                    (self.voted_for is None or self.voted_for == message["candidate_id"])):
+                # Update our term if necessary
+                if message["term"] > self.current_term:
+                    self.current_term = message["term"]
+                    self.voted_for = None  # Reset vote when moving to a new term
+                
+                # Now vote for the candidate
                 self.voted_for = message["candidate_id"]
                 vote_reply = {
                     "type": "vote_grant",
@@ -317,6 +336,17 @@ class RaftNode:
                 candidate_info = self.nodes.get(str(message["candidate_id"]))
                 if candidate_info:
                     self.send_message(candidate_info["host"], candidate_info["port"], vote_reply)
+            else:
+                # Send a negative vote reply
+                vote_reply = {
+                    "type": "vote_grant",
+                    "term": self.current_term,
+                    "vote_granted": False
+                }
+                candidate_info = self.nodes.get(str(message["candidate_id"]))
+                logger.info(f"voted no: term is {self.current_term} vs. proposed {message["term"]}, voted_for is {self.voted_for}, candidate_id is {message['candidate_id']}")
+                if candidate_info:
+                    self.send_message(candidate_info["host"], candidate_info["port"], vote_reply) 
         elif message["type"] == "vote_grant":
             if message["vote_granted"]:
                 self.votes_received += 1

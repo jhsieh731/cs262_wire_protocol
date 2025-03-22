@@ -95,10 +95,13 @@ def find_leader():
     # Check all collected responses for a valid leader.
     for resp in responses:
         if (resp.get("type") == "find_leader_response" and
-            resp.get("host") is not None and
-            resp.get("port") is not None):
+            resp.get("node_id") is not None):
             logger.info(f"Using leader response: {resp}")
-            return resp["host"], resp["port"]
+            client_nodes = config.get("client_nodes", {})
+            client_node = client_nodes.get(resp["node_id"])
+            # if client_node:
+            return client_node["host"], client_node["port"]
+            # return resp["host"], resp["port"]
 
     logger.error("No leader found among raft nodes.")
     return None, None
