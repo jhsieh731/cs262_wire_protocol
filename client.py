@@ -15,9 +15,12 @@ logger = set_logger("client", "client.log")
 sel = None
 protocol = None
 
+current_leader_host = None
+current_leader_port = None
+
 # These specify the client's listening address for receiving asynchronous responses.
 client_listen_host = "127.0.0.1"
-client_listen_port = 60000
+client_listen_port = 60001
 
 # A queue to store leader responses received from raft nodes.
 leader_response_queue = queue.Queue()
@@ -64,7 +67,7 @@ def find_leader():
     for node_id, node_info in raft_nodes.items():
         try:
             s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            s.settimeout(2)
+            s.settimeout(0.1)
             s.connect((node_info["host"], node_info["port"]))
             request = json.dumps({
                 "type": "find_leader",
@@ -81,8 +84,8 @@ def find_leader():
     # Wait for responses from all raft nodes (or until timeout for each)
     for _ in range(num_nodes):
         try:
-            # Adjust timeout as needed; here we wait up to 3 seconds per response.
-            response = leader_response_queue.get(timeout=3)
+            # Adjust timeout as we wait for response.
+            response = leader_response_queue.get(timeout=0.1)
             logger.info(f"Leader response received: {response}")
             responses.append(response)
         except Exception as e:
@@ -101,16 +104,37 @@ def find_leader():
     return None, None
 
 def send_to_server(request):
+    global current_leader_host, current_leader_port
     leader_host, leader_port = find_leader()
     if not leader_host:
         logger.error("No leader found. Request aborted.")
         return
+    logger.info(f"Leader found at {(leader_host, leader_port)}; current is {(current_leader_host, current_leader_port)}")
+    if leader_host != current_leader_host or leader_port != current_leader_port:
+        logger.info(f"Starting connection to leader at {(leader_host, leader_port)}")
+        logger.info(f"Request: {request}")
 
-    logger.info(f"Starting connection to leader at {(leader_host, leader_port)}")
-    logger.info(f"Request: {request}")
+        # Close all existing connections in the selector.
+        for key in list(sel.get_map().values()):
+            key.data.close()
+        
+        # Open a new connection to the leader using the already-defined start_connection function.
+        start_connection(gui, request, leader_host, leader_port)
+    else:
+        logger.info(f"Reusing connection to leader at {(leader_host, leader_port)}")
+        logger.info(f"Request: {request}")
+        try:
+            for key in list(sel.get_map().values()):
+                msg_obj = key.data  # This is the Message instance
     
-    # Open a new connection to the leader using the already-defined start_connection function.
-    start_connection(gui, request, leader_host, leader_port)
+                # Set the request and queue it
+                msg_obj.request = request
+                msg_obj.queue_request()          # Queue the message for sending
+    
+                # Set selector to listen for write events
+                msg_obj._set_selector_events_mask("w")
+        except Exception as e:
+            logger.error(f"Error sending to server: {e}")
 
 # Thread for handling server communication
 def network_thread(request):
@@ -132,7 +156,8 @@ def network_thread(request):
                     logger.info(f"Main: Error: Exception for {message.addr}")
                     message.close()
             if not sel.get_map():
-                break
+                # break
+                continue
     except KeyboardInterrupt:
         logger.info("Caught keyboard interrupt, exiting")
     finally:
@@ -147,6 +172,9 @@ gui = ClientGUI(root, send_to_server, network_thread)
 
 # Networking Functions: Start a connection to the leader
 def start_connection(gui, request, host, port):
+    global current_leader_host, current_leader_port
+    current_leader_host = host
+    current_leader_port = port
     logger.info(f"Starting connection to leader at {(host, port)}")
     print(f"Starting connection to leader at {(host, port)}")
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -155,6 +183,24 @@ def start_connection(gui, request, host, port):
     events = selectors.EVENT_READ | selectors.EVENT_WRITE
     message = msg_client.Message(sel, sock, (host, port), gui, request, protocol)
     sel.register(sock, events, data=message)
+
+# def update_leader(node_id):
+#     global current_server_index, leader_query_pending
+#     current_server_index = node_id
+#     logger.info(f"Updated leader to server {server_addresses[current_server_index]}")
+    
+#     # Close all existing connections in the selector.
+#     for key in list(sel.get_map().values()):
+#         key.data.close()
+    
+#     # Clear the leader query flag before retrying.
+#     leader_query_pending = False
+    
+#     # Retry the last request with the new leader.
+#     if last_request:
+#         start_connection(gui, last_request)
+#     else:
+#         start_connection(gui, {"action": "empty", "content": {}})
 
 
 def main():
