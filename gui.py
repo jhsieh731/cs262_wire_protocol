@@ -148,6 +148,7 @@ class ClientGUI:
         self.clear_frame(self.error_frame)
         self.clear_frame(self.create_account_frame)
         self.clear_frame(self.register_frame)
+        self.clear_frame(self.chat_frame)
         self.chat_frame.pack(fill=tk.BOTH, expand=True)
 
         # First column: Accounts list with search bar and pagination
@@ -478,6 +479,7 @@ class ClientGUI:
                 "content": {"username": username, "password": self.hash_password(password)},
             }
             self.username = username
+            self.password = password
             if not self.is_threading:
                 self.is_threading = True
                 threading.Thread(target=lambda: self.network_thread(request), daemon=True).start()

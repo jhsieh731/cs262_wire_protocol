@@ -3,6 +3,7 @@ import socket
 import selectors
 import tkinter as tk
 import threading
+import time
 import json
 import queue
 import msg_client
@@ -19,8 +20,8 @@ current_leader_host = None
 current_leader_port = None
 
 # These specify the client's listening address for receiving asynchronous responses.
-client_listen_host = "127.0.0.1"
-client_listen_port = 60001
+# client_listen_host = "127.0.0.1"
+# client_listen_port = 60001
 
 # A queue to store leader responses received from raft nodes.
 leader_response_queue = queue.Queue()
@@ -122,7 +123,17 @@ def send_to_server(request):
             key.data.close()
         
         # Open a new connection to the leader using the already-defined start_connection function.
-        start_connection(gui, request, leader_host, leader_port)
+        login_request = {
+            "action": "login",
+            "content": {
+                "username": gui.username,
+                "password": gui.hash_password(gui.password)
+            }
+        }
+        # Update replica with correct client socket, then resend request
+        start_connection(gui, login_request, leader_host, leader_port)
+        gui.after(1000, send_to_server, request)
+        # send_to_server(request)
     else:
         logger.info(f"Reusing connection to leader at {(leader_host, leader_port)}")
         logger.info(f"Request: {request}")
@@ -207,11 +218,16 @@ def start_connection(gui, request, host, port):
 
 
 def main():
-    if len(sys.argv) != 2:
-        logger.info(f"Usage: {sys.argv[0]} <protocol>")
+    if len(sys.argv) != 3:
+        logger.info(f"Usage: {sys.argv[0]} <protocol> <client_listener_host:client_listener_port>")
         sys.exit(1)
 
     input_protocol = sys.argv[1]
+    global client_listen_host, client_listen_port
+    client_listen_host, client_listen_port = sys.argv[2].split(':')
+    client_listen_port = int(client_listen_port)
+    logger.info(f"Client listener address: {(client_listen_host, client_listen_port)}")
+
     initialize_client(input_protocol)
     # Start the leader response listener thread
     listener_thread = threading.Thread(target=leader_response_listener, daemon=True)
