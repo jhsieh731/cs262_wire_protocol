@@ -18,10 +18,7 @@ protocol = None
 
 current_leader_host = None
 current_leader_port = None
-
-# These specify the client's listening address for receiving asynchronous responses.
-# client_listen_host = "127.0.0.1"
-# client_listen_port = 60001
+leader_lock = threading.Lock()
 
 # A queue to store leader responses received from raft nodes.
 leader_response_queue = queue.Queue()
@@ -57,6 +54,34 @@ def leader_response_listener():
         except Exception as e:
             logger.error(f"Error in leader response listener: {e}")
 
+def update_leader(new_leader_host, new_leader_port):
+    global current_leader_host, current_leader_port
+    with leader_lock:
+        current_leader_host, current_leader_port = new_leader_host, new_leader_port
+        logger.info(f"Updated leader to: {(current_leader_host, current_leader_port)}")
+        # Close all existing connections in the selector.
+        for key in list(sel.get_map().values()):
+            key.data.close()
+        
+        # Open a new connection to the leader using the already-defined start_connection function.
+        login_request = {
+            "action": "login",
+            "content": {
+                "username": gui.username,
+                "password": gui.hash_password(gui.password)
+            }
+        }
+        logger.info(f"Retrying login request to new leader: {new_leader_host}:{new_leader_port}")
+        # Update replica with correct client socket, then resend request
+        start_connection(gui, login_request, new_leader_host, new_leader_port)
+
+def periodic_leader_check():
+    global current_leader_host, current_leader_port
+    while True:
+        time.sleep(5)  # Adjust the sleep interval as needed
+        new_leader_host, new_leader_port = find_leader()
+        if new_leader_host and (new_leader_host != current_leader_host or new_leader_port != current_leader_port):
+            update_leader(new_leader_host, new_leader_port)
 
 def find_leader():
     with open('config.json', 'r') as f:
@@ -111,29 +136,17 @@ def send_to_server(request):
     global current_leader_host, current_leader_port
     leader_host, leader_port = find_leader()
     if not leader_host:
-        logger.error("No leader found. Request aborted.")
+        logger.error("No leader found. Retrying.")
+        gui.master.after(1000, send_to_server, request)
         return
+    
     logger.info(f"Leader found at {(leader_host, leader_port)}; current is {(current_leader_host, current_leader_port)}")
     if leader_host != current_leader_host or leader_port != current_leader_port:
-        logger.info(f"Starting connection to leader at {(leader_host, leader_port)}")
-        logger.info(f"Request: {request}")
+        # update_leader(leader_host, leader_port)
+        logger.error("Leader has changed. Retrying.")
+        gui.master.after(1000, send_to_server, request)
+        return
 
-        # Close all existing connections in the selector.
-        for key in list(sel.get_map().values()):
-            key.data.close()
-        
-        # Open a new connection to the leader using the already-defined start_connection function.
-        login_request = {
-            "action": "login",
-            "content": {
-                "username": gui.username,
-                "password": gui.hash_password(gui.password)
-            }
-        }
-        # Update replica with correct client socket, then resend request
-        start_connection(gui, login_request, leader_host, leader_port)
-        gui.after(1000, send_to_server, request)
-        # send_to_server(request)
     else:
         logger.info(f"Reusing connection to leader at {(leader_host, leader_port)}")
         logger.info(f"Request: {request}")
@@ -150,15 +163,29 @@ def send_to_server(request):
         except Exception as e:
             logger.error(f"Error sending to server: {e}")
 
-# Thread for handling server communication
+
+def start_listener_thread():
+     # Start the periodic leader check thread
+    leader_check_thread = threading.Thread(target=periodic_leader_check, daemon=True)
+    leader_check_thread.start()
+
+# Thread for handling server communication: only called once per client
 def network_thread(request):
+    global current_leader_host, current_leader_port
     logger.info(request)
     leader_host, leader_port = find_leader()
     if not leader_host:
         logger.error("No leader found. Request aborted.")
         return
+    
+    with leader_lock:
+        current_leader_host = leader_host
+        current_leader_port = leader_port
 
     start_connection(gui, request, leader_host, leader_port)
+    # wait to start leader listener thread
+    gui.master.after(1000, start_listener_thread)
+
     try:
         while True:
             events = sel.select(timeout=1)
@@ -186,17 +213,22 @@ gui = ClientGUI(root, send_to_server, network_thread)
 
 # Networking Functions: Start a connection to the leader
 def start_connection(gui, request, host, port):
-    global current_leader_host, current_leader_port
-    current_leader_host = host
-    current_leader_port = port
+    # global current_leader_host, current_leader_port
+    # with leader_lock:
+    #     current_leader_host = host
+    #     current_leader_port = port
     logger.info(f"Starting connection to leader at {(host, port)}")
     print(f"Starting connection to leader at {(host, port)}")
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.setblocking(False)
-    sock.connect_ex((host, port))
-    events = selectors.EVENT_READ | selectors.EVENT_WRITE
-    message = msg_client.Message(sel, sock, (host, port), gui, request, protocol)
-    sel.register(sock, events, data=message)
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.setblocking(False)
+        sock.connect_ex((host, port))
+        events = selectors.EVENT_READ | selectors.EVENT_WRITE
+        message = msg_client.Message(sel, sock, (host, port), gui, request, protocol)
+        sel.register(sock, events, data=message)
+    except Exception as e:
+        logger.error(f"Error starting connection: {e}")
+        print(f"Error starting connection: {e}")
 
 # def update_leader(node_id):
 #     global current_server_index, leader_query_pending
@@ -232,8 +264,10 @@ def main():
     # Start the leader response listener thread
     listener_thread = threading.Thread(target=leader_response_listener, daemon=True)
     listener_thread.start()
+
     # Start the GUI main loop (which will trigger send_to_server as needed)
     root.mainloop()
 
 if __name__ == '__main__':
     main()
+

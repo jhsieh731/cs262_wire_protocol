@@ -117,31 +117,37 @@ class RaftNode:
             logger.error(f"Error initializing client server: {e}")
             sys.exit(1)
 
+    # def accept_client_connections(self, lsock_client, accepted_versions, protocol):
+    #     conn, addr = lsock_client.accept()
+    #     logger.info(f"Accepted client connection from {addr}")
+    #     conn.setblocking(False)
+    #     try:
+    #         data = conn.recv(1024)
+    #         if data:
+    #             logger.info(f"Received data from {addr}: {data.decode()}")
+    #             try:
+    #                 message = json.loads(data.decode())
+    #                 if message.get("type") == "find_leader":
+    #                     logger.info(f"Received find_leader request from {addr}")
+    #                     # In Option B, we expect the client to receive responses asynchronously.
+    #                     # Therefore, we can simply close this connection.
+    #                     conn.close()
+    #                     return
+    #             except Exception as e:
+    #                 logger.error(f"Error processing find_leader message: {e}")
+    #     except Exception as e:
+    #         logger.error(f"Error reading from client socket: {e}")
+
+    #     message = Message(self.sel, conn, addr, accepted_versions, protocol, self.db, self.broadcast)
+    #     # if has_data:
+    #     #     message._recv_buffer += data
+    #     # self._recv_buffer += data # add back read data
+    #     self.sel.register(conn, selectors.EVENT_READ, data=message)
     def accept_client_connections(self, lsock_client, accepted_versions, protocol):
         conn, addr = lsock_client.accept()
         logger.info(f"Accepted client connection from {addr}")
         conn.setblocking(False)
-        try:
-            data = conn.recv(1024)
-            if data:
-                logger.info(f"Received data from {addr}: {data.decode()}")
-                try:
-                    message = json.loads(data.decode())
-                    if message.get("type") == "find_leader":
-                        logger.info(f"Received find_leader request from {addr}")
-                        # In Option B, we expect the client to receive responses asynchronously.
-                        # Therefore, we can simply close this connection.
-                        conn.close()
-                        return
-                except Exception as e:
-                    logger.error(f"Error processing find_leader message: {e}")
-        except Exception as e:
-            logger.error(f"Error reading from client socket: {e}")
-
         message = Message(self.sel, conn, addr, accepted_versions, protocol, self.db, self.broadcast)
-        # if has_data:
-        #     message._recv_buffer += data
-        # self._recv_buffer += data # add back read data
         self.sel.register(conn, selectors.EVENT_READ, data=message)
 
 

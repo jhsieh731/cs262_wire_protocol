@@ -635,6 +635,7 @@ class ClientGUI:
                 self.create_error_page(response.get("error", "An error occurred"))
             else:
                 self.username = self.register_username_entry.get()
+                self.password = self.register_password_entry.get()
                 self.user_uuid = response.get("uuid", None)
                 self.create_chat_page()
                 logger.info(f"Registered user: {self.username} with UUID: {self.user_uuid} and refreshing search_accounts")
