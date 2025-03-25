@@ -350,7 +350,7 @@ class RaftNode:
                     "vote_granted": False
                 }
                 candidate_info = self.nodes.get(str(message["candidate_id"]))
-                logger.info(f"voted no: term is {self.current_term} vs. proposed {message["term"]}, voted_for is {self.voted_for}, candidate_id is {message['candidate_id']}")
+                logger.info(f"voted no: term is {self.current_term} vs. proposed {message['term']}, voted_for is {self.voted_for}, candidate_id is {message['candidate_id']}")
                 if candidate_info:
                     self.send_message(candidate_info["host"], candidate_info["port"], vote_reply) 
         elif message["type"] == "vote_grant":
