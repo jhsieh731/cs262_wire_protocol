@@ -32,7 +32,7 @@ class RaftNode:
 
         self.state = "follower"  # "follower", "candidate", "leader"
         self.leader_id = None
-        self.election_timeout = random.uniform(3, 6)
+        self.election_timeout = random.uniform(3, 5)
         self.last_heartbeat = time.time()
 
         
@@ -78,7 +78,6 @@ class RaftNode:
         """Handle messages from a connected client"""
         try:
             data = client_socket.recv(1024)
-            logger.info(f"Received raw data: {data!r}")
             if not data:
                 logger.info("No data received; closing connection.")
                 return
@@ -104,7 +103,6 @@ class RaftNode:
                 lsock_client.bind((self.client_host, self.client_port))
             except OSError as e:
                 logger.error(f"Error binding to {self.client_host}:{self.client_port} - {e}")
-                logger.error("Try using a different port number.")
                 lsock_client.close()
                 sys.exit(1)
             lsock_client.listen()
@@ -117,32 +115,6 @@ class RaftNode:
             logger.error(f"Error initializing client server: {e}")
             sys.exit(1)
 
-    # def accept_client_connections(self, lsock_client, accepted_versions, protocol):
-    #     conn, addr = lsock_client.accept()
-    #     logger.info(f"Accepted client connection from {addr}")
-    #     conn.setblocking(False)
-    #     try:
-    #         data = conn.recv(1024)
-    #         if data:
-    #             logger.info(f"Received data from {addr}: {data.decode()}")
-    #             try:
-    #                 message = json.loads(data.decode())
-    #                 if message.get("type") == "find_leader":
-    #                     logger.info(f"Received find_leader request from {addr}")
-    #                     # In Option B, we expect the client to receive responses asynchronously.
-    #                     # Therefore, we can simply close this connection.
-    #                     conn.close()
-    #                     return
-    #             except Exception as e:
-    #                 logger.error(f"Error processing find_leader message: {e}")
-    #     except Exception as e:
-    #         logger.error(f"Error reading from client socket: {e}")
-
-    #     message = Message(self.sel, conn, addr, accepted_versions, protocol, self.db, self.broadcast)
-    #     # if has_data:
-    #     #     message._recv_buffer += data
-    #     # self._recv_buffer += data # add back read data
-    #     self.sel.register(conn, selectors.EVENT_READ, data=message)
     def accept_client_connections(self, lsock_client, accepted_versions, protocol):
         conn, addr = lsock_client.accept()
         logger.info(f"Accepted client connection from {addr}")
@@ -176,25 +148,12 @@ class RaftNode:
         try:
             while self.raft_socket_running:
                 events = self.sel.select(timeout=None)
-                logger.info(f"events: {events}")
                 for key, mask in events:
                     if key.data is None:
                         self.accept_client_connections(key.fileobj, accepted_versions, protocol)
                     else:
                         message = key.data
                         logger.info(f"Message: {message}")
-                        # data = message.sock.recv(1024)
-                        # if data:
-                        #     try:
-                        #         message = json.loads(data.decode())
-                        #         logger.info(f"Message: {message}")
-                        #         if message.get("type") == "find_leader":
-                        #             response = json.dumps({"host": self.client_host, "port": self.client_port}).encode()
-                        #             message.sock.sendall(response)
-                        #             continue
-                        #     except Exception as e:
-                        #         logger.info("did not parse json, adding back to buffer")
-                        #         message._recv_buffer += data
 
                         try:
                             message.process_events(mask)
@@ -207,8 +166,6 @@ class RaftNode:
             logger.info("\nCaught keyboard interrupt, shutting down...")
         finally:
             logger.info("Closing all connections...")
-            # self.election_thread.join()
-            # self.election_thread.join()
             # Close all open sockets
             for key in list(self.sel.get_map().values()):
                 self.sel.unregister(key.fileobj)
@@ -225,7 +182,7 @@ class RaftNode:
             client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             client_socket.connect((peer_host, peer_port))
             client_socket.sendall(json.dumps(message, ensure_ascii=False).encode('utf-8'))
-            logger.info(f"message: {message}")
+            logger.info(f"Sending to client: {message}")
         except Exception as e:
             logger.info(f"Error sending message to port {peer_port}: {e}")
         finally:
@@ -246,9 +203,9 @@ class RaftNode:
         """Monitor if leader fails and start an election."""
         while True:
             time.sleep(1)
-            logger.info(str(time.time() - self.last_heartbeat) + "timeout: " + str(self.election_timeout))
+            logger.info(str(time.time() - self.last_heartbeat) + "; timeout: " + str(self.election_timeout))
             if self.state != "leader" and time.time() - self.last_heartbeat > self.election_timeout:
-                self.election_timeout = random.uniform(5, 10)
+                self.election_timeout = random.uniform(3, 5)
                 self.voted_for = None
                 logger.info(f"Node {self.node_id} timed out. Starting election.")
                 self.start_election()
@@ -265,7 +222,6 @@ class RaftNode:
             "term": self.current_term,
             "candidate_id": self.node_id
         }
-        logger.info(f"election message: {election_msg}")
         self.broadcast(election_msg)
 
         start_time = time.time()
@@ -290,7 +246,7 @@ class RaftNode:
                 "leader_id": self.node_id
             }
             self.broadcast(heartbeat_msg)
-            time.sleep(2)
+            time.sleep(1)
 
     def process_peer_message(self, message):
         """Process an incoming Raft message from a peer."""
@@ -350,7 +306,7 @@ class RaftNode:
                     "vote_granted": False
                 }
                 candidate_info = self.nodes.get(str(message["candidate_id"]))
-                logger.info(f"voted no: term is {self.current_term} vs. proposed {message['term']}, voted_for is {self.voted_for}, candidate_id is {message['candidate_id']}")
+                # logger.info(f"voted no: term is {self.current_term} vs. proposed {message['term']}, voted_for is {self.voted_for}, candidate_id is {message['candidate_id']}")
                 if candidate_info:
                     self.send_message(candidate_info["host"], candidate_info["port"], vote_reply) 
         elif message["type"] == "vote_grant":
@@ -367,7 +323,6 @@ class RaftNode:
                     password = content.get("password", None)
                     addr = content.get("addr", None)
                     self.db.login(username, password, addr)
-                    logger.info(f"login: {username}, {password}, {addr}")
                     self.last_applied = commit_index
                 elif action == "register":
                     username = content.get("username", None)
@@ -405,7 +360,7 @@ class RaftNode:
     def monitor_peer_status(self):
             """Monitor the status of peers and remove unresponsive peers."""
             while True:
-                time.sleep(5)  # Check every 5 seconds
+                time.sleep(2)  # Check every 2 seconds
                 for peer in self.peers[:]:
                     if not self.check_peer_status(peer):
                         logger.info(f"Peer {peer['host']}:{peer['port']} is unresponsive. Removing from peers.")

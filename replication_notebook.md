@@ -13,6 +13,11 @@ The key components of our replication system are:
 
 ## Design Decisions for `raft_node.py`
 
+- We keep two listeners up in the raft node: one for its replica peers and one for the client. This allows us to keep client/server functionalities from the first pset separate from anything that the client doesn't really need to know about.
+- The client has access to all raft nodes. The list of replica raft node servers are provided in the config file for ease of use: it seemed too much to require the user provide the set of known nodes through the command line; we could also reasonably create a separate client config file. We chose to expose the raft nodes to the client because our architecture relies on clients initializing contact with replicas; if the client does not have this known set, then it cannot reach out to the servers when the leader dies. Also, to further separate user/client/server interaction Messages from any "hidden" replica communication, we have the client poll the replicas' peer listener for updates on leader changes. This also allows the server to quickly process "find_leader" requests without too much additional processing of headers, etc.
+- We initially tried having the client only request a new leader on message send failure, but this means that the specification of immediate delivery when a client is online necessarily fails. (If a client is online but the leader dies, then the client sends no messages, then the client does not attempt to reconnect & the new leader thinks it is offline.) Therefore the client polls for changes from the set of replicas. There is some downtime because the election can sometimes take 1-2 seconds (or longer if two replicas timeout simultaneously and a re-election is required), and the client's poll interval is also 2 seconds.
+- Although the Raft protocol usually synchronizes logs, we chose to directly broadcast the update from the leader to each of the replicas. The ordering of the updates is guaranteed by tracking commit indices on each of the replicas, and since we don't need to guarantee recoverability, not synchronizing with extra logs seemed reasonable. The tradeoff is that there is a possibility of losing a commit from the leader, since the leader commits a change without verifying all followers have received the change in their logs (i.e. at-most-once delivery of db updates). Our testing has not shown this kind of error.
+
 ### State Management
 
 Each `RaftNode` maintains several state variables:
@@ -21,7 +26,7 @@ Each `RaftNode` maintains several state variables:
 - `voted_for` - The ID of the candidate voted for in the current term
 - `state` - The node's current state (follower, candidate, or leader)
 - `leader_id` - The ID of the current leader node
-- `last_applied` - The index of the last applied log entry
+- `last_applied` - The index of the last committed db update
 - `db` - A SQLite database instance with a unique file per node (`db_{node_id}.db`)
 
 ### Communication Architecture
@@ -35,6 +40,7 @@ We implemented a dual-socket architecture:
 2. **Client Communication**: A separate socket for client interactions.
    - Uses selectors for efficient I/O multiplexing
    - Handles client requests and forwards to the leader when necessary
+   - Listener is always up but only really used with the client when the replica is the leader.
 
 ### Leader Election
 

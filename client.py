@@ -78,7 +78,7 @@ def update_leader(new_leader_host, new_leader_port):
 def periodic_leader_check():
     global current_leader_host, current_leader_port
     while True:
-        time.sleep(5)  # Adjust the sleep interval as needed
+        time.sleep(2)  # Adjust the sleep interval as needed
         new_leader_host, new_leader_port = find_leader()
         if new_leader_host and (new_leader_host != current_leader_host or new_leader_port != current_leader_port):
             update_leader(new_leader_host, new_leader_port)
