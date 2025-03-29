@@ -1,0 +1,99 @@
+# Documentation for Raft-based Fault Tolerance System
+
+## 1. raft_node.py
+
+The `raft_node.py` module implements a Raft consensus algorithm-based node for distributed message replication. This implementation provides fault tolerance by allowing multiple nodes to maintain synchronized state and continue operation even if some nodes fail.
+
+### Key Components
+
+#### Class: RaftNode
+Represents a node in the Raft cluster that can act as a follower, candidate, or leader.
+
+#### Initialization Parameters:
+- `node_id`: Unique identifier for this node
+- `nodes`: Dictionary of all nodes in the cluster (mapping node IDs to node configs)
+- `client_host`: Hostname for client connections
+- `client_port`: Port for client connections
+
+#### Node States:
+- **Follower**: Default state - receives updates from the leader
+- **Candidate**: State during leader election - requests votes from peers
+- **Leader**: Coordinates the cluster, sends heartbeats, and replicates database operations
+
+#### Major Functions:
+
+##### 1. Peer Communication
+- `start_peer_server()`: Initializes the Raft server for peer communication
+- `_listen_for_connections()`: Listens for and accepts peer connections
+- `handle_peer_connection(client_socket)`: Processes messages from peers
+- `send_message(peer_host, peer_port, message)`: Sends a message to a specific peer
+- `broadcast(message)`: Sends a message to all peers in the cluster
+
+##### 2. Client Communication
+- `initialize_client_server()`: Sets up the server for client connections
+- `accept_client_connections(lsock_client, accepted_versions, protocol)`: Handles incoming client connections
+
+##### 3. Raft Protocol Implementation
+- `monitor_election_timeout()`: Detects leader failures and initiates elections
+- `start_election()`: Manages the leader election process
+- `send_heartbeat()`: Periodically sends heartbeats when leader
+- `process_peer_message(message)`: Processes Raft protocol messages from peers
+
+##### 4. Fault Tolerance Features
+- `monitor_peer_status()`: Continuously checks if peers are responsive
+- `check_peer_status(peer)`: Verifies if a specific peer is responsive
+- Automatic leader election when the current leader fails
+- Consistent database replication across all nodes
+- Handling of node failures and rejoins
+
+##### 5. Database Replication
+- Replicates all database operations (login, register, message storing, etc.)
+- Maintains consistent state across all nodes using commit indices
+- Ensures that operations are applied in the same order on all nodes
+
+### Fault Tolerance Capabilities:
+- Continues functioning with a minority of nodes down (2-fault tolerant with 5 nodes)
+- Automatically elects a new leader if the current leader fails
+- Maintains consistent state across all operating nodes
+- Detects and handles node failures and network partitions
+- Preserves data integrity through consensus-based replication
+
+## 2. start_cluster.py
+
+The `start_cluster.py` module provides a simple way to start a node in the Raft cluster.
+
+### Key Components:
+
+#### Function: start_node
+Takes a node ID and configuration information to initialize and run a RaftNode.
+
+#### Parameters:
+- `node_id`: ID of the node to start
+- `raft_nodes`: Configuration of all Raft nodes in the cluster
+- `client_nodes`: Configuration of client interfaces for all nodes
+- `accepted_versions`: Protocol versions accepted by the server
+- `protocol`: Protocol configuration settings
+
+### Usage:
+```
+python start_cluster.py <node_id>
+```
+
+### Operation Flow:
+1. Reads the cluster configuration from `config.json`
+2. Extracts accepted protocol versions and protocol settings
+3. Gets Raft node and client node configurations
+4. Initializes the specified node with its configuration
+5. Starts the node's client server
+6. Runs the node, which:
+   - Waits for all peers to be available
+   - Starts the election timeout monitor
+   - Starts the peer status monitor
+   - Begins accepting and processing client connections
+
+### Integration with Raft System:
+- Each node started with `start_cluster.py` becomes part of the Raft consensus group
+- The full cluster requires starting multiple nodes with different node IDs
+- For a 5-node cluster, you would run this script 5 times with node IDs 1-5
+
+This start script is essential for deploying the fault-tolerant system across multiple machines or processes, facilitating the creation of a robust distributed messaging system that can withstand node failures.
